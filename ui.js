@@ -5,25 +5,6 @@ const LETTERS = 'ABC';
 const COLOR_NAME = { B:'흑', W:'백' };
 let s, mode, phase = 'start', viewer = 0, assigns, fighters, ui, net = null, notice = '', noticeOk = false, tableTurn = 1;
 
-// 모두 저작권이 끝난 작품. 출처는 위키미디어 공용.
-const ART = {
-  era1: { title:'라스코 동굴 벽화', by:'작자 미상', year:'선사 시대' },
-  era2: { title:'제국의 여정: 목가의 시대', by:'토머스 콜', year:'1830년대' },
-  era3: { title:'페리클레스의 추도 연설', by:'필리프 폴츠 원화', year:'19세기' },
-  era4: { title:'루이 14세의 초상', by:'이아생트 리고', year:'1701년', pos:'center 22%' },
-  era5: { title:'제국의 여정: 제국의 완성', by:'토머스 콜', year:'1830년대' },
-  era6: { title:'테니스 코트의 서약', by:'자크 루이 다비드', year:'18세기 말' },
-  era7: { title:'아테네 학당', by:'라파엘로', year:'16세기 초', pos:'center 40%' },
-  uprising: { title:'바스티유 함락', by:'장 피에르 우엘', year:'1789년' },
-  constitution: { title:'미국 헌법 서명 장면', by:'하워드 챈들러 크리스티', year:'1940년' },
-  split: { title:'제국의 여정: 파괴', by:'토머스 콜', year:'1830년대' },
-  independence: { title:'델라웨어강을 건너는 워싱턴', by:'에마누엘 로이체', year:'1851년' },
-  revolution: { title:'민중을 이끄는 자유의 여신', by:'외젠 들라크루아', year:'1830년', pos:'center 25%' },
-  execution: { title:'루이 16세의 처형', by:'프랑스 판화', year:'18세기 말' },
-  cycle: { title:'제국의 여정: 황폐', by:'토머스 콜', year:'1830년대' },
-};
-const SPECIAL_ART = { '시민 봉기':'uprising', '헌법 제정':'constitution', '제국 분열':'split', '독립 전쟁':'independence', '대혁명':'revolution', '왕의 처형':'execution', '문명의 순환':'cycle' };
-
 const nameOf = p => mode === 'bot' ? ['나','봇'][p] : mode === 'online' ? (p === viewer ? '나' : '상대') : `플레이어 ${p + 1}`;
 const squadTitle = p => mode !== 'hotseat' && p === viewer ? '내 문명' : `${nameOf(p)} 문명`;
 const comboText = (b, w) => b && w ? `흑 ${b} / 백 ${w}` : b ? `흑 ${b}` : `백 ${w}`;
@@ -32,14 +13,23 @@ const rankTag = rank => `<b class="rank ${rank === 1 ? 'top' : rank <= 3 ? 'high
 const handLine = e => `${rankTag(e.rank)} ${e.name}${star(e)}`;
 const eul = word => (word.charCodeAt(word.length - 1) - 0xAC00) % 28 ? '을' : '를';
 const beatText = (t, count) => { const names = TABLES[t].slice(0, count).map(row => row[2]); return `${names.join(', ')}${eul(names.at(-1))} 이긴다`; };
-const artImg = (key, alt = ART[key].title) => `<img src="img/${key}.jpg" alt="${alt}" style="object-position:${ART[key].pos ?? 'center'}">`;
-const artCredit = key => `${ART[key].title}, ${ART[key].by}, ${ART[key].year}`;
+const artImg = (art, cls = '') => `<img class="${cls}" src="${art.file}" alt="${art.title}" loading="lazy" style="object-position:${art.pos ?? 'center'}">`;
+const artCredit = art => `${art.title}, ${art.by}, ${art.year}`;
 const isHidden = (st, owner, view) => st.kind === 'G' && !st.revealed && view !== 'all' && view !== owner;
 
+// 화면에는 글자 대신 작은 돌로 그린다. 글자는 화면 낭독용으로만 남긴다.
+const dot = c => `<span class="dot ${c === 'B' ? 'b' : c === 'W' ? 'w' : 'g'}"></span>`;
+const dotsOf = (b, w) => `<span class="dots" role="img" aria-label="${comboText(b, w)}">${dot('B').repeat(b)}${dot('W').repeat(w)}</span>`;
+function shapeDots(shape, b, w) {
+  const [pattern, note] = shape.split('|');
+  const stones = pattern.replace(/\[([BW]+)\]|([BW])/g, (_, group, one) => group ? `<span class="any" title="칸 안의 돌은 순서 무관">${[...group].map(dot).join('')}</span>` : dot(one));
+  return `<span class="dots" role="img" aria-label="${comboText(b, w)}, 순서 조건 있음">${stones}</span>${note ? `<small class="shape-note">${note}</small>` : ''}`;
+}
+
 function stoneHTML(st, owner, view) {
-  if (isHidden(st, owner, view)) return '<span class="stone hidden" role="img" aria-label="공개되지 않은 회색돌" title="공개되지 않은 회색돌">?</span>';
+  if (isHidden(st, owner, view)) return '<span class="stone hidden" role="img" aria-label="공개되지 않은 회색돌">?</span>';
   const label = `${st.kind === 'G' ? '회색돌에서 나온 ' : ''}${COLOR_NAME[st.color]}돌`;
-  return `<span class="stone ${st.color === 'B' ? 'b' : 'w'}${st.kind === 'G' ? ' from-gray' : ''}" role="img" aria-label="${label}" title="${label}"></span>`;
+  return `<span class="stone ${st.color === 'B' ? 'b' : 'w'}${st.kind === 'G' ? ' from-gray' : ''}" role="img" aria-label="${label}"></span>`;
 }
 
 function banTag(civ) {
@@ -51,14 +41,12 @@ const inGame = () => ['assign', 'fight', 'waiting'].includes(phase) && !s.over;
 
 function civCard(owner, i, view) {
   const civ = s.players[owner].civs[i], banned = civ.bannedThrough >= s.turn && !s.over;
-  const visible = civ.stones.filter(st => !isHidden(st, owner, view));
-  const black = visible.filter(st => st.color === 'B').length, hidden = civ.stones.length - visible.length;
-  let info = civ.stones.length ? `흑 ${black} · 백 ${visible.length - black}${hidden ? ` · ? ${hidden}` : ''}` : '돌 없음';
+  let info = '';
   if (inGame()) {
-    if (banned) info += '<br>이번 턴 출전 불가';
+    if (banned) info = '이번 턴 출전 불가';
     else {
       const h = possibleHands(s.turn, view === owner ? colorsOf(civ) : publicSeq(civ));
-      info = h.best === h.worst ? `${rankTag(h.best)} ${h.name}<br>${info}` : `${info}<br>가능 ${h.best}~${h.worst}위`;
+      info = h.best === h.worst ? `${rankTag(h.best)} ${h.name}` : `가능 ${h.best}~${h.worst}위`;
       if (h.specials.length && h.best !== h.worst) info += `<div class="note">★ ${h.specials.join(', ')} 가능</div>`;
     }
   }
@@ -76,7 +64,7 @@ function assignCard(i) {
     const label = kind === 'G' ? `회색 (실제 ${COLOR_NAME[color]})` : `${COLOR_NAME[color]}돌`;
     return `<button class="pick" data-act="assign" data-i="${i}" data-kind="${kind}" aria-pressed="${chosen === kind}" aria-label="문명 ${LETTERS[i]}에 ${label} 주기: ${e.rank}위 ${e.name}">
       <span class="stone ${color === 'B' ? 'b' : 'w'}${kind === 'G' ? ' from-gray' : ''}"></span>
-      <span class="labels"><small>${label}</small><span class="name">${handLine(e)}</span></span>
+      <span class="labels">${kind === 'G' ? '<small>회색돌</small>' : ''}<span class="name">${handLine(e)}</span></span>
     </button>`;
   }).join('');
   const pending = chosen ? `<span class="stone pending ${stoneColor(s, v, chosen) === 'B' ? 'b' : 'w'}" role="img" aria-label="이번 턴에 줄 돌"></span>` : '';
@@ -94,8 +82,10 @@ function fightCard(i) {
   return `<article class="card ${ui.fighter === i ? 'selected' : legal ? '' : 'banned'}">
     <div class="card-head"><strong>문명 ${LETTERS[i]}</strong>${banTag(civ)}</div>
     <div class="stones">${civ.stones.map(st => stoneHTML(st, v, v)).join('')}</div>
-    <p class="hand">${handLine(e)}</p>
-    <p class="muted">${e.why}${e.special ? `. ${beatText(s.turn, e.beats)}` : ''}</p>
+    <div class="hand-mini">${artImg(HAND_ART[e.name], 'thumb')}<div>
+      <p class="hand">${handLine(e)}</p>
+      <p class="muted">${e.why}${e.special ? `. ${beatText(s.turn, e.beats)}` : ''}</p>
+    </div></div>
     <button class="fight" data-act="fight" data-i="${i}" aria-pressed="${ui.fighter === i}" ${legal && !onlyOne ? '' : 'disabled'}>${label}</button>
   </article>`;
 }
@@ -117,7 +107,7 @@ function matchupHTML() {
       <thead><tr><td></td>${opp.map(o => `<th scope="col">상대 ${LETTERS[o]}</th>`).join('')}</tr></thead>
       <tbody>${mine.map(m => `<tr class="${ui.fighter === m ? 'picked' : ''}"><th scope="row">내 ${LETTERS[m]}</th>${opp.map(o => cell(m, o)).join('')}</tr>`).join('')}</tbody>
     </table>
-    <p class="muted">숨은 회색돌은 흑과 백이 반반이라고 보고 계산합니다.</p>`;
+    <p class="muted">숨은 회색돌은 두 색이 반반이라고 보고 계산합니다.</p>`;
 }
 
 // 이번 턴 족보표에서 각 문명이 어느 줄에 있는지.
@@ -138,12 +128,20 @@ function rowChips(t) {
 }
 
 function tableHTML() {
-  const t = tableTurn, chips = rowChips(t);
-  return `<div class="tabs" role="group" aria-label="턴별 족보표">${Object.keys(TABLES).map(u => `<button class="tab" data-act="tableTab" data-t="${u}" aria-pressed="${Number(u) === t}" aria-label="${u}턴 족보">${u}</button>`).join('')}</div>
-    <table class="ranks"><caption>${t}턴 ${ERAS[t][0]} · 승리 ${pointsFor(t)}점</caption><tbody>
-    ${TABLES[t].map((row, i) => `<tr class="${row[4] ? 'special' : ''}"><td>${i + 1}위</td><td class="${row[4] ? '' : 'combo'}">${row[4] ? `★ ${row[5]}` : comboText(row[0], row[1])}</td><td><b>${row[2]}</b>${(chips[i] ?? []).join('')}<small>${row[3]}${row[4] ? `. ${beatText(t, row[6] ?? 1)}` : ''}</small></td></tr>`).join('')}
-    </tbody></table>
-    ${t === s?.turn ? '<p class="muted">동그라미 글자는 지금 내 문명과 상대 문명의 자리입니다.</p>' : ''}`;
+  const t = tableTurn, chips = rowChips(t), current = s?.turn;
+  const row = (r, i) => `<li class="hand-row ${r[4] ? 'special' : ''} ${chips[i]?.length ? 'occupied' : ''}">
+      ${artImg(HAND_ART[r[2]], 'thumb')}
+      <div class="hand-body">
+        <div class="hand-title">${rankTag(i + 1)} <strong>${r[2]}</strong>${r[4] ? ' <span class="star">★</span>' : ''}${(chips[i] ?? []).join('')}</div>
+        <div class="hand-shape">${r[4] ? shapeDots(r[5], r[0], r[1]) : dotsOf(r[0], r[1])}</div>
+        <p class="why">${r[3]}</p>
+        ${r[4] ? `<p class="beats">${beatText(t, r[6] ?? 1)}</p>` : ''}
+      </div>
+    </li>`;
+  return `<div class="tabs" role="group" aria-label="턴별 족보표">${Object.keys(TABLES).map(u => `<button class="tab ${Number(u) === current ? 'current' : ''}" data-act="tableTab" data-t="${u}" aria-pressed="${Number(u) === t}" aria-label="${u}턴 족보">${u}</button>`).join('')}</div>
+    <div class="hand-head"><h2>${t}턴 ${ERAS[t][0]}</h2><span class="points">승리 ${pointsFor(t)}점</span></div>
+    <ol class="hand-list">${TABLES[t].map(row).join('')}</ol>
+    <p class="legend">${t >= 3 ? '<span class="any">' + dot('B') + dot('W') + '</span> 칸 안의 돌은 순서 무관. ' : ''}${t === current ? '<span class="chip">A</span> 내 문명 <span class="chip opp">상대 A</span> 상대 문명의 현재 자리.' : ''}</p>`;
 }
 
 function historyHTML(open = false) {
@@ -168,8 +166,8 @@ function hud(now) {
   </header>`;
 }
 
-function eraBanner(t, key = `era${t}`, heading = `${t}/${LAST_TURN}턴 · ${ERAS[t][0]}`, line = `${ERAS[t][1]} 승리 시 ${pointsFor(t)}점.`) {
-  return `<section class="era">${artImg(key)}<div class="era-text"><h1>${heading}</h1><p>${line}</p><cite>${artCredit(key)}</cite></div></section>`;
+function eraBanner(t) {
+  return `<section class="era">${artImg(ERA_ART[t])}<div class="era-text"><h1>${t}/${LAST_TURN}턴 · ${ERAS[t][0]}</h1><p>${ERAS[t][1]} 승리 시 ${pointsFor(t)}점.</p><cite>${artCredit(ERA_ART[t])}</cite></div></section>`;
 }
 
 const steps = now => `<ol class="steps">${['돌 배치', '문명 출전', '전투'].map((label, i) => `<li class="${i === now ? 'now' : ''}" ${i === now ? 'aria-current="step"' : ''}>${i + 1}. ${label}</li>`).join('')}</ol>`;
@@ -177,10 +175,10 @@ const tableButton = '<button class="only-phone" data-act="openTable">족보표</
 const layout = (main, bar = '') => `<div class="layout"><main>${main}${bar}</main><aside class="rail" aria-label="족보표">${tableHTML()}</aside></div>`;
 
 const screens = {
-  start: () => `<section class="era hero">${artImg('era5')}<div class="era-text">
+  start: () => `<section class="era hero">${artImg(ERA_ART[5])}<div class="era-text">
       <h1>문명 대전</h1>
       <p>돌을 나눠 키운 세 문명으로 일곱 시대를 겨룹니다.</p>
-      <cite>${artCredit('era5')}</cite>
+      <cite>${artCredit(ERA_ART[5])}</cite>
     </div></section>
     <div class="modes">
       <button class="primary" data-act="start" data-mode="bot">봇과 대전</button>
@@ -194,7 +192,7 @@ const screens = {
     </div>
     <details class="panel" open><summary>게임 방법</summary>
       <ol class="rules">
-        <li>매 턴 흑돌, 백돌, 회색돌을 내 문명 3개에 하나씩 줍니다. 회색돌의 색은 랜덤이고 나만 압니다.</li>
+        <li>매 턴 돌 3개(${dot('B')} ${dot('W')} ${dot('G')})를 내 문명 3개에 하나씩 줍니다. 회색돌(${dot('G')})의 색은 랜덤이고 나만 압니다.</li>
         <li>양쪽 돌 배치가 동시에 공개됩니다. 상대의 회색돌은 "?"로 보입니다.</li>
         <li>배치를 보고 출전할 문명을 비공개로 고릅니다. 출전한 문명의 회색돌은 그때 공개됩니다.</li>
         <li>돌 색 개수로 족보 순위를 겨룹니다. 순위가 같으면 무승부입니다.</li>
@@ -204,7 +202,7 @@ const screens = {
       </ol>
     </details>
     <details class="panel"><summary>그림 출처</summary>
-      <ul class="credits">${Object.keys(ART).map(k => `<li>${artCredit(k)}</li>`).join('')}</ul>
+      <ul class="credits">${[...Object.values(ERA_ART), ...Object.values(HAND_ART)].map(art => `<li>${artCredit(art)}</li>`).join('')}</ul>
       <p class="muted">모두 저작권이 끝난 작품이며 위키미디어 공용에서 가져왔습니다.</p>
     </details>`,
 
@@ -247,7 +245,7 @@ const screens = {
       ${layout(`<h2>${nameOf(1 - v)} 문명</h2>
         <div class="cards">${[0,1,2].map(i => civCard(1 - v, i, v)).join('')}</div>
         <h2>${squadTitle(v)}: 돌 나눠 주기</h2>
-        <p class="muted">이번 회색돌의 실제 색은 ${COLOR_NAME[s.gray[v]]}입니다. 돌을 고르면 겹치는 문명과 자동으로 맞바꿉니다.</p>
+        <p class="muted">이번 회색돌의 실제 색: <span role="img" aria-label="${COLOR_NAME[s.gray[v]]}">${dot(s.gray[v])}</span> · 돌을 고르면 겹치는 문명과 자동으로 맞바꿉니다.</p>
         <div class="cards mine">${[0,1,2].map(assignCard).join('')}</div>
         ${historyHTML()}`,
       `<div class="actionbar">${tableButton}<button class="primary" data-act="confirmAssign" ${missing ? 'disabled' : ''}>돌 배치 확정</button>${missing ? '<span class="hint">돌을 모두 나눠 주세요.</span>' : ''}</div>`)}`;
@@ -273,17 +271,17 @@ const screens = {
     const bans = h.winner === null ? '양쪽 문명 다음 1턴 출전 제한.' : '승리 문명 다음 2턴, 패배 문명 다음 1턴 출전 제한.';
     const tone = h.winner === null || mode === 'hotseat' ? '' : h.winner === viewer ? 'win' : 'lose';
     const headline = h.winner === null ? '무승부' : `${nameOf(h.winner)} 승리 +${pointsFor(h.turn)}점`;
-    const duel = p => `<article class="card ${h.winner === p ? 'winner' : ''}">
+    const duel = p => { const art = HAND_ART[h.hands[p].name]; return `<article class="card duel-card ${h.winner === p ? 'winner' : ''}">
+      ${artImg(art, 'hand-art')}
       <div class="card-head"><strong>${nameOf(p)} · 문명 ${LETTERS[h.fighters[p]]}</strong><span class="tag">${h.winner === p ? '승리' : h.winner === null ? '무승부' : '패배'}</span></div>
+      <p class="hand-big">${handLine(h.hands[p])}</p>
       <div class="stones">${s.players[p].civs[h.fighters[p]].stones.map(st => stoneHTML(st, p, view)).join('')}</div>
-      <p class="hand">${handLine(h.hands[p])} <span class="muted">(${comboText(h.hands[p].black, h.hands[p].white)})</span></p>
       <p class="muted">${h.hands[p].why}</p>
-    </article>`;
-    const banner = upset
-      ? eraBanner(h.turn, SPECIAL_ART[h.hands[h.winner].name], `${h.turn}/${LAST_TURN}턴 · ★ ${h.hands[h.winner].name}`, h.hands[h.winner].why)
-      : eraBanner(h.turn);
-    return `${hud(h.turn)}${banner}${steps(2)}
-      ${layout(`<p class="result-line ${tone}">${headline}</p>
+      <cite class="credit">${artCredit(art)}</cite>
+    </article>`; };
+    return `${hud(h.turn)}${steps(2)}
+      ${layout(`<p class="muted turn-label">${h.turn}/${LAST_TURN}턴 · ${ERAS[h.turn][0]}</p>
+        <h1 class="result-line ${tone}">${headline}</h1>
         <p class="muted">${reason}. ${bans}</p>
         <div class="duel">${duel(0)}${duel(1)}</div>
         <h2>${squadTitle(0)}</h2><div class="cards">${[0,1,2].map(i => civCard(0, i, view)).join('')}</div>
@@ -294,10 +292,10 @@ const screens = {
 
   end: () => {
     const [a, b] = s.players.map(p => p.score);
-    return `<section class="era">${artImg('era7')}<div class="era-text">
+    return `<section class="era">${artImg(ERA_ART[7])}<div class="era-text">
         <h1>${a === b ? '무승부' : `${nameOf(a > b ? 0 : 1)} 승리`}</h1>
         <p class="score">${nameOf(0)} ${a}점 : ${b}점 ${nameOf(1)}</p>
-        <cite>${artCredit('era7')}</cite>
+        <cite>${artCredit(ERA_ART[7])}</cite>
       </div></section>
       <p class="bar">${mode !== 'online' ? `<button class="primary" data-act="start" data-mode="${mode}">다시 하기</button>`
         : net?.role === 'host' ? '<button class="primary" data-act="rematch">다시 하기</button>'

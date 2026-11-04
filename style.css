@@ -122,17 +122,33 @@ input { font: inherit; color: var(--ink); background: var(--bg); border: 1px sol
 .actionbar .hint { width: 100%; order: 3; font-size: .85rem; color: var(--muted); }
 
 /* 족보표 */
-.tabs { display: flex; gap: 3px; margin-bottom: 8px; }
-.tab { flex: 1; min-width: 0; padding: 6px 0; font-size: .85rem; }
+.tabs { display: flex; gap: 3px; margin-bottom: 10px; }
+.tab { flex: 1; min-width: 0; padding: 6px 0; font-size: .85rem; position: relative; }
+.tab.current { box-shadow: inset 0 -3px 0 var(--gold); }
 .tab[aria-pressed="true"] { background: var(--gold); border-color: var(--gold); color: #1d1a12; font-weight: 700; }
-.ranks { width: 100%; border-collapse: collapse; font-size: .9rem; }
-.ranks caption { text-align: left; font-family: var(--display); font-weight: 700; padding: 2px 0 6px; }
-.ranks td { padding: 6px 5px; border-top: 1px solid var(--line); vertical-align: top; }
-.ranks td:first-child { white-space: nowrap; color: var(--muted); font-variant-numeric: tabular-nums; }
-.ranks .combo { white-space: nowrap; }
-.ranks small { display: block; color: var(--muted); font-size: .8rem; line-height: 1.35; }
-.ranks tr.special { background: #1f3638; }
-.ranks tr.special b { color: var(--special); }
+.hand-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 6px; }
+.hand-head h2 { margin: 0; }
+.points { font-size: .85rem; color: var(--gold); font-weight: 700; white-space: nowrap; }
+.hand-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.hand-row { display: grid; grid-template-columns: 60px minmax(0, 1fr); gap: 10px; padding: 7px; border-radius: 8px; background: var(--panel-2); }
+.hand-row.special { background: #1d3b3e; box-shadow: inset 0 0 0 1px #3f7277; }
+.hand-row.occupied { box-shadow: inset 0 0 0 2px var(--gold); }
+.thumb { width: 60px; height: 60px; object-fit: cover; border-radius: 6px; background: var(--bg); }
+.hand-title { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 5px; line-height: 1.3; }
+.hand-title strong { font-family: var(--display); font-size: 1.02rem; }
+.hand-shape { margin-top: 4px; }
+.why { margin: 3px 0 0; font-size: .8rem; line-height: 1.35; color: var(--muted); }
+.beats { margin: 3px 0 0; font-size: .8rem; font-weight: 700; color: var(--special); }
+.legend { font-size: .8rem; color: var(--muted); margin-top: 8px; }
+.dots { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 3px; vertical-align: middle; }
+.dot { display: inline-block; width: 14px; height: 14px; border-radius: 50%; vertical-align: -2px; box-shadow: 0 0 0 1px rgba(255, 255, 255, .28); }
+.dot.b { background: radial-gradient(circle at 34% 28%, #666, #111 60%); }
+.dot.w { background: radial-gradient(circle at 34% 28%, #fff, #d8d4cb); }
+.dot.g { background: radial-gradient(circle at 34% 28%, #b4babb, #6d7477); }
+.any { display: inline-flex; gap: 3px; padding: 2px 4px; vertical-align: middle; border: 1px dashed var(--special); border-radius: 6px; }
+.shape-note { display: block; margin-top: 2px; font-size: .78rem; color: var(--special); }
+.hand-mini { display: grid; grid-template-columns: 60px minmax(0, 1fr); gap: 10px; margin-top: 8px; }
+.hand-mini .hand { margin: 0; }
 .chip { display: inline-block; min-width: 20px; padding: 0 4px; margin-left: 3px; text-align: center; border-radius: 10px; font-size: .74rem; font-weight: 700; background: var(--gold); color: #1d1a12; }
 .chip.opp { background: var(--lose); }
 .chip.off { opacity: .45; }
@@ -144,7 +160,14 @@ dialog::backdrop { background: rgba(0, 0, 0, .6); }
 .sheet-body { padding: 12px 14px calc(16px + env(safe-area-inset-bottom, 0px)); }
 
 /* 결과 */
-.result-line { font-family: var(--display); font-size: 1.5rem; font-weight: 700; margin-top: 12px; }
+.turn-label { margin-top: 12px; }
+.result-line { font-family: var(--display); font-size: 1.6rem; font-weight: 700; margin-top: 2px; }
+.duel-card { padding-top: 0; overflow: hidden; }
+.card.duel-card.winner { padding-top: 0; }
+.hand-art { width: calc(100% + 20px); max-width: none; margin: 0 -10px 10px; aspect-ratio: 16 / 10; object-fit: cover; }
+.winner .hand-art { width: calc(100% + 18px); margin: 0 -9px 10px; }
+.hand-big { margin-top: 6px; font-family: var(--display); font-size: 1.25rem; font-weight: 700; }
+.credit { display: block; margin-top: 4px; font-style: normal; font-size: .72rem; color: var(--muted); }
 .result-line.win { color: var(--win); }
 .result-line.lose { color: var(--lose); }
 .duel { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; margin-top: 8px; }
@@ -193,7 +216,7 @@ ol.history li { padding: 6px 0; border-top: 1px solid var(--line); }
   dialog { margin: auto; border-radius: 14px; }
 }
 @media (min-width: 1000px) {
-  .layout { grid-template-columns: minmax(0, 1fr) 360px; }
+  .layout { grid-template-columns: minmax(0, 1fr) 390px; }
   .rail { display: block; position: sticky; top: 10px; align-self: start; max-height: calc(100dvh - 20px); overflow-y: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
   .only-phone { display: none; }
 }
