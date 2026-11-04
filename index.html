@@ -80,7 +80,8 @@ const squadTitle = p => mode !== 'hotseat' && p === viewer ? '내 문명' : `${n
 const comboText = (b, w) => b && w ? `흑 ${b} / 백 ${w}` : b ? `흑 ${b}` : `백 ${w}`;
 const star = e => e.special ? ' ★' : '';
 const handText = e => `${e.rank}위 ${e.name}${star(e)} (${comboText(e.black, e.white)})`;
-const patternText = seq => [...seq].map(c => COLOR_NAME[c]).join('-');
+const eul = word => (word.charCodeAt(word.length - 1) - 0xAC00) % 28 ? '을' : '를';
+const beatText = (t, count) => { const names = TABLES[t].slice(0, count).map(row => row[2]); return `${names.join(', ')}${eul(names.at(-1))} 이긴다`; };
 const mine = v => v === viewer;
 
 function stoneHTML(st, owner, view) {
@@ -136,14 +137,14 @@ function fightCard(i) {
     <div class="card-head"><strong>문명 ${LETTERS[i]}</strong>${banTag(civ)}</div>
     <div class="stones">${civ.stones.map(st => stoneHTML(st, v, v)).join('')}</div>
     <p>${handText(e)}</p>
-    <p class="muted">${e.why}${e.special ? ` 1위 ${TABLES[s.turn][0][2]}을 이긴다.` : ''}</p>
+    <p class="muted">${e.why}${e.special ? `. ${beatText(s.turn, e.beats)}` : ''}</p>
     <button class="fight" data-act="fight" data-i="${i}" aria-pressed="${ui.fighter === i}" ${legal && !onlyOne ? '' : 'disabled'}>${label}</button>
   </article>`;
 }
 
 function rankTable(t, note = '') {
   return `<table><caption>${t}턴 · ${ERAS[t][0]}${note}</caption><tbody>
-    ${TABLES[t].map((row, i) => `<tr class="${row[4] ? 'special' : ''}"><td>${i + 1}위</td><td>${row[4] ? `★ ${patternText(row[4])}` : comboText(row[0], row[1])}</td><td><b>${row[2]}</b><small>${row[3]}${row[4] ? `. 1위 ${TABLES[t][0][2]}을 이긴다` : ''}</small></td></tr>`).join('')}
+    ${TABLES[t].map((row, i) => `<tr class="${row[4] ? 'special' : ''}"><td>${i + 1}위</td><td>${row[4] ? `★ ${row[5]}` : comboText(row[0], row[1])}</td><td><b>${row[2]}</b><small>${row[3]}${row[4] ? `. ${beatText(t, row[6] ?? 1)}` : ''}</small></td></tr>`).join('')}
     </tbody></table>`;
 }
 
@@ -181,7 +182,7 @@ const screens = {
       <li>양쪽이 돌 배치를 비공개로 정하면 동시에 공개합니다. 회색돌의 실제 색은 숨겨집니다.</li>
       <li>공개된 배치를 보고 양쪽이 출전할 문명을 비공개로 동시에 정합니다. 출전한 문명의 회색돌은 그때 공개됩니다.</li>
       <li>문명은 누적한 돌의 색 개수로 그 턴의 족보 순위를 겨룹니다. 순위가 같으면 무승부입니다.</li>
-      <li>★ 특수 족보는 돌을 받은 순서까지 맞아야 완성되며, 그 턴 1위 족보를 이깁니다. 나머지 상대에게는 표의 순위대로 판정합니다.</li>
+      <li>★ 특수 족보는 돌을 받은 순서가 정해진 모양에 맞아야 완성되며, 그 턴 1위 족보를 이깁니다(7턴은 상위 3개). 나머지 상대에게는 표의 순위대로 판정합니다.</li>
       <li>승리 문명은 다음 2턴, 패배·무승부 문명은 다음 1턴 동안 출전할 수 없습니다.</li>
       <li>승리 점수는 1~4턴 1점, 5·6턴 2점, 7턴 5점. 7턴 후 승점이 많은 쪽이 이깁니다.</li>
     </ul>
@@ -254,7 +255,7 @@ const screens = {
 
   result: () => {
     const h = s.history.at(-1), view = mode === 'hotseat' ? null : viewer, [a, b] = h.hands;
-    const reason = h.winner !== null && h.hands[h.winner].special && h.hands[1 - h.winner].rank === 1 ? `★ ${h.hands[h.winner].name}이 1위 ${h.hands[1 - h.winner].name}을 이김`
+    const reason = h.winner !== null && h.hands[1 - h.winner].rank <= h.hands[h.winner].beats ? `★ ${h.hands[h.winner].name}: ${h.hands[1 - h.winner].name}${eul(h.hands[1 - h.winner].name)} 이김`
       : a.rank !== b.rank ? `${a.rank}위 대 ${b.rank}위` : '같은 족보';
     const bans = h.winner === null ? '양쪽 문명 다음 1턴 출전 제한.' : '승리 문명 다음 2턴, 패배 문명 다음 1턴 출전 제한.';
     const duel = p => `<article class="card ${h.winner === p ? 'winner' : ''}">
