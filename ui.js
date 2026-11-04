@@ -1,0 +1,420 @@
+// 화면. 규칙은 game.js, 온라인 연결은 net.js에 있다.
+const app = document.getElementById('app');
+const sheet = document.getElementById('table-sheet');
+const LETTERS = 'ABC';
+const COLOR_NAME = { B:'흑', W:'백' };
+let s, mode, phase = 'start', viewer = 0, assigns, fighters, ui, net = null, notice = '', noticeOk = false, tableTurn = 1;
+
+// 모두 저작권이 끝난 작품. 출처는 위키미디어 공용.
+const ART = {
+  era1: { title:'라스코 동굴 벽화', by:'작자 미상', year:'선사 시대' },
+  era2: { title:'제국의 여정: 목가의 시대', by:'토머스 콜', year:'1830년대' },
+  era3: { title:'페리클레스의 추도 연설', by:'필리프 폴츠 원화', year:'19세기' },
+  era4: { title:'루이 14세의 초상', by:'이아생트 리고', year:'1701년', pos:'center 22%' },
+  era5: { title:'제국의 여정: 제국의 완성', by:'토머스 콜', year:'1830년대' },
+  era6: { title:'테니스 코트의 서약', by:'자크 루이 다비드', year:'18세기 말' },
+  era7: { title:'아테네 학당', by:'라파엘로', year:'16세기 초', pos:'center 40%' },
+  uprising: { title:'바스티유 함락', by:'장 피에르 우엘', year:'1789년' },
+  constitution: { title:'미국 헌법 서명 장면', by:'하워드 챈들러 크리스티', year:'1940년' },
+  split: { title:'제국의 여정: 파괴', by:'토머스 콜', year:'1830년대' },
+  independence: { title:'델라웨어강을 건너는 워싱턴', by:'에마누엘 로이체', year:'1851년' },
+  revolution: { title:'민중을 이끄는 자유의 여신', by:'외젠 들라크루아', year:'1830년', pos:'center 25%' },
+  execution: { title:'루이 16세의 처형', by:'프랑스 판화', year:'18세기 말' },
+  cycle: { title:'제국의 여정: 황폐', by:'토머스 콜', year:'1830년대' },
+};
+const SPECIAL_ART = { '시민 봉기':'uprising', '헌법 제정':'constitution', '제국 분열':'split', '독립 전쟁':'independence', '대혁명':'revolution', '왕의 처형':'execution', '문명의 순환':'cycle' };
+
+const nameOf = p => mode === 'bot' ? ['나','봇'][p] : mode === 'online' ? (p === viewer ? '나' : '상대') : `플레이어 ${p + 1}`;
+const squadTitle = p => mode !== 'hotseat' && p === viewer ? '내 문명' : `${nameOf(p)} 문명`;
+const comboText = (b, w) => b && w ? `흑 ${b} / 백 ${w}` : b ? `흑 ${b}` : `백 ${w}`;
+const star = e => e.special ? ' <span class="star" aria-label="특수 족보">★</span>' : '';
+const rankTag = rank => `<b class="rank ${rank === 1 ? 'top' : rank <= 3 ? 'high' : ''}">${rank}위</b>`;
+const handLine = e => `${rankTag(e.rank)} ${e.name}${star(e)}`;
+const eul = word => (word.charCodeAt(word.length - 1) - 0xAC00) % 28 ? '을' : '를';
+const beatText = (t, count) => { const names = TABLES[t].slice(0, count).map(row => row[2]); return `${names.join(', ')}${eul(names.at(-1))} 이긴다`; };
+const artImg = (key, alt = ART[key].title) => `<img src="img/${key}.jpg" alt="${alt}" style="object-position:${ART[key].pos ?? 'center'}">`;
+const artCredit = key => `${ART[key].title}, ${ART[key].by}, ${ART[key].year}`;
+const isHidden = (st, owner, view) => st.kind === 'G' && !st.revealed && view !== 'all' && view !== owner;
+
+function stoneHTML(st, owner, view) {
+  if (isHidden(st, owner, view)) return '<span class="stone hidden" role="img" aria-label="공개되지 않은 회색돌" title="공개되지 않은 회색돌">?</span>';
+  const label = `${st.kind === 'G' ? '회색돌에서 나온 ' : ''}${COLOR_NAME[st.color]}돌`;
+  return `<span class="stone ${st.color === 'B' ? 'b' : 'w'}${st.kind === 'G' ? ' from-gray' : ''}" role="img" aria-label="${label}" title="${label}"></span>`;
+}
+
+function banTag(civ) {
+  const left = civ.bannedThrough - s.turn + 1;
+  return left > 0 ? `<span class="tag off">출전 제한 ${left}턴</span>` : '<span class="tag">출전 가능</span>';
+}
+
+const inGame = () => ['assign', 'fight', 'waiting'].includes(phase) && !s.over;
+
+function civCard(owner, i, view) {
+  const civ = s.players[owner].civs[i], banned = civ.bannedThrough >= s.turn && !s.over;
+  const visible = civ.stones.filter(st => !isHidden(st, owner, view));
+  const black = visible.filter(st => st.color === 'B').length, hidden = civ.stones.length - visible.length;
+  let info = civ.stones.length ? `흑 ${black} · 백 ${visible.length - black}${hidden ? ` · ? ${hidden}` : ''}` : '돌 없음';
+  if (inGame()) {
+    if (banned) info += '<br>이번 턴 출전 불가';
+    else {
+      const h = possibleHands(s.turn, view === owner ? colorsOf(civ) : publicSeq(civ));
+      info = h.best === h.worst ? `${rankTag(h.best)} ${h.name}<br>${info}` : `${info}<br>가능 ${h.best}~${h.worst}위`;
+      if (h.specials.length && h.best !== h.worst) info += `<div class="note">★ ${h.specials.join(', ')} 가능</div>`;
+    }
+  }
+  return `<article class="card ${banned ? 'banned' : ''}">
+    <div class="card-head"><strong>문명 ${LETTERS[i]}</strong>${s.over ? '' : banTag(civ)}</div>
+    <div class="stones">${civ.stones.map(st => stoneHTML(st, owner, view)).join('') || '<span class="empty">돌 없음</span>'}</div>
+    <div class="info">${info}</div>
+  </article>`;
+}
+
+function assignCard(i) {
+  const v = viewer, civ = s.players[v].civs[i], seq = colorsOf(civ), chosen = ui.assign[i];
+  const picks = ['B','W','G'].map(kind => {
+    const color = stoneColor(s, v, kind), e = evaluate(s.turn, seq + color);
+    const label = kind === 'G' ? `회색 (실제 ${COLOR_NAME[color]})` : `${COLOR_NAME[color]}돌`;
+    return `<button class="pick" data-act="assign" data-i="${i}" data-kind="${kind}" aria-pressed="${chosen === kind}" aria-label="문명 ${LETTERS[i]}에 ${label} 주기: ${e.rank}위 ${e.name}">
+      <span class="stone ${color === 'B' ? 'b' : 'w'}${kind === 'G' ? ' from-gray' : ''}"></span>
+      <span class="labels"><small>${label}</small><span class="name">${handLine(e)}</span></span>
+    </button>`;
+  }).join('');
+  const pending = chosen ? `<span class="stone pending ${stoneColor(s, v, chosen) === 'B' ? 'b' : 'w'}" role="img" aria-label="이번 턴에 줄 돌"></span>` : '';
+  return `<article class="card">
+    <div class="card-head"><strong>문명 ${LETTERS[i]}</strong>${banTag(civ)}</div>
+    <div class="stones">${civ.stones.map(st => stoneHTML(st, v, v)).join('')}${pending || (civ.stones.length ? '' : '<span class="empty">돌 없음</span>')}</div>
+    <div class="picks">${picks}</div>
+  </article>`;
+}
+
+function fightCard(i) {
+  const v = viewer, civ = s.players[v].civs[i], e = evaluate(s.turn, colorsOf(civ));
+  const legal = civ.bannedThrough < s.turn, onlyOne = legalFighters(s, v).length === 1;
+  const label = !legal ? `출전 제한 (${civ.bannedThrough - s.turn + 1}턴)` : onlyOne ? '강제 출전' : ui.fighter === i ? '출전 선택됨' : '이 문명 출전';
+  return `<article class="card ${ui.fighter === i ? 'selected' : legal ? '' : 'banned'}">
+    <div class="card-head"><strong>문명 ${LETTERS[i]}</strong>${banTag(civ)}</div>
+    <div class="stones">${civ.stones.map(st => stoneHTML(st, v, v)).join('')}</div>
+    <p class="hand">${handLine(e)}</p>
+    <p class="muted">${e.why}${e.special ? `. ${beatText(s.turn, e.beats)}` : ''}</p>
+    <button class="fight" data-act="fight" data-i="${i}" aria-pressed="${ui.fighter === i}" ${legal && !onlyOne ? '' : 'disabled'}>${label}</button>
+  </article>`;
+}
+
+// 내 출전 후보와 상대 출전 후보가 만났을 때의 결과. 상대 회색돌은 반반으로 본다.
+function matchupHTML() {
+  const v = viewer, t = s.turn, mine = legalFighters(s, v), opp = legalFighters(s, 1 - v);
+  const cell = (m, o) => {
+    const seqs = fills(publicSeq(s.players[1 - v].civs[o]));
+    const wins = seqs.filter(q => compareHands(t, colorsOf(s.players[v].civs[m]), q) === 0).length;
+    const draws = seqs.filter(q => compareHands(t, colorsOf(s.players[v].civs[m]), q) === null).length;
+    if (wins === seqs.length) return '<td class="win">승</td>';
+    if (draws === seqs.length) return '<td>무</td>';
+    if (wins + draws === 0) return '<td class="lose">패</td>';
+    return `<td class="mixed">${wins ? `승 ${Math.round(wins / seqs.length * 100)}%` : `무 ${Math.round(draws / seqs.length * 100)}%`}</td>`;
+  };
+  return `<h2>출전 상성표</h2>
+    <table class="matchup">
+      <thead><tr><td></td>${opp.map(o => `<th scope="col">상대 ${LETTERS[o]}</th>`).join('')}</tr></thead>
+      <tbody>${mine.map(m => `<tr class="${ui.fighter === m ? 'picked' : ''}"><th scope="row">내 ${LETTERS[m]}</th>${opp.map(o => cell(m, o)).join('')}</tr>`).join('')}</tbody>
+    </table>
+    <p class="muted">숨은 회색돌은 흑과 백이 반반이라고 보고 계산합니다.</p>`;
+}
+
+// 이번 턴 족보표에서 각 문명이 어느 줄에 있는지.
+function rowChips(t) {
+  const chips = {};
+  const add = (e, html) => { (chips[e.rank - 1] ??= []).push(html); };
+  if (t !== s?.turn || !['assign', 'fight'].includes(phase)) return chips;
+  const v = viewer;
+  s.players[v].civs.forEach((civ, i) => {
+    const kind = ui.assign[i], seq = phase === 'fight' ? colorsOf(civ) : kind ? colorsOf(civ) + stoneColor(s, v, kind) : null;
+    if (seq) add(evaluate(t, seq), `<span class="chip ${civ.bannedThrough >= t ? 'off' : ''}" title="내 문명 ${LETTERS[i]}">${LETTERS[i]}</span>`);
+  });
+  if (phase === 'fight') s.players[1 - v].civs.forEach((civ, i) => {
+    const q = publicSeq(civ);
+    if (!q.includes('?')) add(evaluate(t, q), `<span class="chip opp ${civ.bannedThrough >= t ? 'off' : ''}" title="상대 문명 ${LETTERS[i]}">상대 ${LETTERS[i]}</span>`);
+  });
+  return chips;
+}
+
+function tableHTML() {
+  const t = tableTurn, chips = rowChips(t);
+  return `<div class="tabs" role="group" aria-label="턴별 족보표">${Object.keys(TABLES).map(u => `<button class="tab" data-act="tableTab" data-t="${u}" aria-pressed="${Number(u) === t}" aria-label="${u}턴 족보">${u}</button>`).join('')}</div>
+    <table class="ranks"><caption>${t}턴 ${ERAS[t][0]} · 승리 ${pointsFor(t)}점</caption><tbody>
+    ${TABLES[t].map((row, i) => `<tr class="${row[4] ? 'special' : ''}"><td>${i + 1}위</td><td class="${row[4] ? '' : 'combo'}">${row[4] ? `★ ${row[5]}` : comboText(row[0], row[1])}</td><td><b>${row[2]}</b>${(chips[i] ?? []).join('')}<small>${row[3]}${row[4] ? `. ${beatText(t, row[6] ?? 1)}` : ''}</small></td></tr>`).join('')}
+    </tbody></table>
+    ${t === s?.turn ? '<p class="muted">동그라미 글자는 지금 내 문명과 상대 문명의 자리입니다.</p>' : ''}`;
+}
+
+function historyHTML(open = false) {
+  if (!s.history.length) return '';
+  const lines = s.history.map(h => {
+    const result = h.winner === null ? '무승부' : `${nameOf(h.winner)} 승 +${pointsFor(h.turn)}`;
+    return `<li>${h.turn}턴: ${nameOf(0)} ${LETTERS[h.fighters[0]]} ${h.hands[0].rank}위 ${h.hands[0].name}${star(h.hands[0])} 대 ${nameOf(1)} ${LETTERS[h.fighters[1]]} ${h.hands[1].rank}위 ${h.hands[1].name}${star(h.hands[1])} · <b>${result}</b> · 출전 선택지 ${h.choices[0]}개/${h.choices[1]}개</li>`;
+  }).join('');
+  return `<details ${open ? 'open' : ''}><summary>전투 기록 (${s.history.length}턴)</summary><ol class="history">${lines}</ol></details>`;
+}
+
+function hud(now) {
+  const pips = Object.keys(TABLES).map(Number).map(t => {
+    const h = s.history.find(x => x.turn === t);
+    const tag = !h ? pointsFor(t) + '점' : h.winner === null ? '무' : mode === 'hotseat' ? `P${h.winner + 1}` : h.winner === viewer ? '승' : '패';
+    const tone = h && h.winner !== null && mode !== 'hotseat' ? (h.winner === viewer ? 'win' : 'lose') : '';
+    return `<li class="pip ${t === now ? 'now' : ''} ${tone}" aria-label="${t}턴 ${h ? tag : `승리 ${pointsFor(t)}점`}">${t}턴<b>${tag}</b></li>`;
+  }).join('');
+  return `<header class="hud">
+    <div class="score">${nameOf(0)} ${s.players[0].score}점 : ${s.players[1].score}점 ${nameOf(1)}</div>
+    <ol class="pips">${pips}</ol>
+  </header>`;
+}
+
+function eraBanner(t, key = `era${t}`, heading = `${t}/${LAST_TURN}턴 · ${ERAS[t][0]}`, line = `${ERAS[t][1]} 승리 시 ${pointsFor(t)}점.`) {
+  return `<section class="era">${artImg(key)}<div class="era-text"><h1>${heading}</h1><p>${line}</p><cite>${artCredit(key)}</cite></div></section>`;
+}
+
+const steps = now => `<ol class="steps">${['돌 배치', '문명 출전', '전투'].map((label, i) => `<li class="${i === now ? 'now' : ''}" ${i === now ? 'aria-current="step"' : ''}>${i + 1}. ${label}</li>`).join('')}</ol>`;
+const tableButton = '<button class="only-phone" data-act="openTable">족보표</button>';
+const layout = (main, bar = '') => `<div class="layout"><main>${main}${bar}</main><aside class="rail" aria-label="족보표">${tableHTML()}</aside></div>`;
+
+const screens = {
+  start: () => `<section class="era hero">${artImg('era5')}<div class="era-text">
+      <h1>문명 대전</h1>
+      <p>돌을 나눠 키운 세 문명으로 일곱 시대를 겨룹니다.</p>
+      <cite>${artCredit('era5')}</cite>
+    </div></section>
+    <div class="modes">
+      <button class="primary" data-act="start" data-mode="bot">봇과 대전</button>
+      <button class="primary" data-act="start" data-mode="hotseat">둘이서 번갈아 하기</button>
+      <button class="primary" data-act="host">온라인 방 만들기</button>
+    </div>
+    <div class="panel join">
+      <label for="join-code">받은 방 코드</label>
+      <input id="join-code" maxlength="4" autocomplete="off" value="${/^#[A-Za-z0-9]{4}$/.test(location.hash) ? location.hash.slice(1).toUpperCase() : ''}">
+      <button data-act="join">참가</button>
+    </div>
+    <details class="panel" open><summary>게임 방법</summary>
+      <ol class="rules">
+        <li>매 턴 흑돌, 백돌, 회색돌을 내 문명 3개에 하나씩 줍니다. 회색돌의 색은 랜덤이고 나만 압니다.</li>
+        <li>양쪽 돌 배치가 동시에 공개됩니다. 상대의 회색돌은 "?"로 보입니다.</li>
+        <li>배치를 보고 출전할 문명을 비공개로 고릅니다. 출전한 문명의 회색돌은 그때 공개됩니다.</li>
+        <li>돌 색 개수로 족보 순위를 겨룹니다. 순위가 같으면 무승부입니다.</li>
+        <li>★ 특수 족보는 돌을 받은 순서가 정해진 모양에 맞아야 완성되며, 그 턴 1위 족보를 이깁니다(7턴은 상위 3개).</li>
+        <li>승리한 문명은 다음 2턴, 패배하거나 비긴 문명은 다음 1턴 동안 출전할 수 없습니다.</li>
+        <li>승리 점수는 1~4턴 1점, 5·6턴 2점, 7턴 5점입니다. 7턴 뒤 승점이 많은 쪽이 이깁니다.</li>
+      </ol>
+    </details>
+    <details class="panel"><summary>그림 출처</summary>
+      <ul class="credits">${Object.keys(ART).map(k => `<li>${artCredit(k)}</li>`).join('')}</ul>
+      <p class="muted">모두 저작권이 끝난 작품이며 위키미디어 공용에서 가져왔습니다.</p>
+    </details>`,
+
+  lobby: () => net.role === 'host'
+    ? `<div class="panel">
+        <h1>온라인 방</h1>
+        <p class="code">${net.code}</p>
+        <p>상대에게 이 코드를 알려 주세요. 상대가 참가하면 바로 시작합니다. 이 창을 닫으면 방이 사라집니다.</p>
+        <p class="bar">
+          <button class="primary" data-act="copy" data-text="${net.code}">코드 복사</button>
+          ${location.protocol.startsWith('http') ? `<button data-act="copy" data-text="${location.href.split('#')[0]}#${net.code}">초대 링크 복사</button>` : ''}
+          <button data-act="home">취소</button>
+        </p>
+      </div>`
+    : `<div class="panel">
+        <h1>방 ${net.code}에 연결하는 중</h1>
+        <p class="muted">최대 20초 걸릴 수 있습니다.</p>
+        <p class="bar"><button data-act="home">취소</button></p>
+      </div>`,
+
+  waiting: () => {
+    const v = viewer;
+    return `${hud(s.turn)}${eraBanner(s.turn)}${steps(s.stage === 'assign' ? 0 : 1)}
+      ${layout(`<p class="result-line">상대를 기다리는 중</p>
+        <p class="muted">${s.stage === 'assign' ? '돌 배치를 확정했습니다. 상대가 확정하면 양쪽 배치가 공개됩니다.' : '출전 문명을 확정했습니다. 상대가 확정하면 전투합니다.'}</p>
+        <h2>${nameOf(1 - v)} 문명</h2><div class="cards">${[0,1,2].map(i => civCard(1 - v, i, v)).join('')}</div>
+        <h2>${squadTitle(v)}</h2><div class="cards">${[0,1,2].map(i => civCard(v, i, v)).join('')}</div>
+        ${historyHTML()}`, `<div class="actionbar only-phone">${tableButton}</div>`)}`;
+  },
+
+  pass: () => `<div class="panel">
+    <h1>${nameOf(viewer)} 차례</h1>
+    <p>${s.turn}/${LAST_TURN}턴 ${s.stage === 'assign' ? '돌 배치' : '문명 출전'}. 기기를 ${nameOf(viewer)}에게 넘겨주세요. 상대는 화면을 보지 마세요.</p>
+    <p class="bar"><button class="primary" data-act="ready">준비 완료</button></p>
+  </div>`,
+
+  assign: () => {
+    const v = viewer, t = s.turn, missing = ui.assign.includes(null);
+    return `${hud(t)}${eraBanner(t)}${steps(0)}
+      ${layout(`<h2>${nameOf(1 - v)} 문명</h2>
+        <div class="cards">${[0,1,2].map(i => civCard(1 - v, i, v)).join('')}</div>
+        <h2>${squadTitle(v)}: 돌 나눠 주기</h2>
+        <p class="muted">이번 회색돌의 실제 색은 ${COLOR_NAME[s.gray[v]]}입니다. 돌을 고르면 겹치는 문명과 자동으로 맞바꿉니다.</p>
+        <div class="cards mine">${[0,1,2].map(assignCard).join('')}</div>
+        ${historyHTML()}`,
+      `<div class="actionbar">${tableButton}<button class="primary" data-act="confirmAssign" ${missing ? 'disabled' : ''}>돌 배치 확정</button>${missing ? '<span class="hint">돌을 모두 나눠 주세요.</span>' : ''}</div>`)}`;
+  },
+
+  fight: () => {
+    const v = viewer, t = s.turn, missing = ui.fighter === null;
+    return `${hud(t)}${eraBanner(t)}${steps(1)}
+      ${layout(`<h2>${nameOf(1 - v)} 문명</h2>
+        <div class="cards">${[0,1,2].map(i => civCard(1 - v, i, v)).join('')}</div>
+        ${matchupHTML()}
+        <h2>${squadTitle(v)}: 출전 고르기</h2>
+        <div class="cards mine">${[0,1,2].map(fightCard).join('')}</div>
+        ${historyHTML()}`,
+      `<div class="actionbar">${tableButton}<button class="primary" data-act="confirmFight" ${missing ? 'disabled' : ''}>출전 확정</button>${missing ? '<span class="hint">출전할 문명을 고르세요.</span>' : ''}</div>`)}`;
+  },
+
+  result: () => {
+    const h = s.history.at(-1), view = mode === 'hotseat' ? null : viewer, [a, b] = h.hands;
+    const upset = h.winner !== null && h.hands[1 - h.winner].rank <= h.hands[h.winner].beats;
+    const reason = upset ? `★ ${h.hands[h.winner].name}: ${h.hands[1 - h.winner].name}${eul(h.hands[1 - h.winner].name)} 이김`
+      : a.rank !== b.rank ? `${a.rank}위 대 ${b.rank}위` : '같은 족보';
+    const bans = h.winner === null ? '양쪽 문명 다음 1턴 출전 제한.' : '승리 문명 다음 2턴, 패배 문명 다음 1턴 출전 제한.';
+    const tone = h.winner === null || mode === 'hotseat' ? '' : h.winner === viewer ? 'win' : 'lose';
+    const headline = h.winner === null ? '무승부' : `${nameOf(h.winner)} 승리 +${pointsFor(h.turn)}점`;
+    const duel = p => `<article class="card ${h.winner === p ? 'winner' : ''}">
+      <div class="card-head"><strong>${nameOf(p)} · 문명 ${LETTERS[h.fighters[p]]}</strong><span class="tag">${h.winner === p ? '승리' : h.winner === null ? '무승부' : '패배'}</span></div>
+      <div class="stones">${s.players[p].civs[h.fighters[p]].stones.map(st => stoneHTML(st, p, view)).join('')}</div>
+      <p class="hand">${handLine(h.hands[p])} <span class="muted">(${comboText(h.hands[p].black, h.hands[p].white)})</span></p>
+      <p class="muted">${h.hands[p].why}</p>
+    </article>`;
+    const banner = upset
+      ? eraBanner(h.turn, SPECIAL_ART[h.hands[h.winner].name], `${h.turn}/${LAST_TURN}턴 · ★ ${h.hands[h.winner].name}`, h.hands[h.winner].why)
+      : eraBanner(h.turn);
+    return `${hud(h.turn)}${banner}${steps(2)}
+      ${layout(`<p class="result-line ${tone}">${headline}</p>
+        <p class="muted">${reason}. ${bans}</p>
+        <div class="duel">${duel(0)}${duel(1)}</div>
+        <h2>${squadTitle(0)}</h2><div class="cards">${[0,1,2].map(i => civCard(0, i, view)).join('')}</div>
+        <h2>${nameOf(1)} 문명</h2><div class="cards">${[0,1,2].map(i => civCard(1, i, view)).join('')}</div>
+        ${historyHTML()}`,
+      `<div class="actionbar">${tableButton}<button class="primary" data-act="next">${s.over ? '최종 결과 보기' : '다음 턴'}</button></div>`)}`;
+  },
+
+  end: () => {
+    const [a, b] = s.players.map(p => p.score);
+    return `<section class="era">${artImg('era7')}<div class="era-text">
+        <h1>${a === b ? '무승부' : `${nameOf(a > b ? 0 : 1)} 승리`}</h1>
+        <p class="score">${nameOf(0)} ${a}점 : ${b}점 ${nameOf(1)}</p>
+        <cite>${artCredit('era7')}</cite>
+      </div></section>
+      <p class="bar">${mode !== 'online' ? `<button class="primary" data-act="start" data-mode="${mode}">다시 하기</button>`
+        : net?.role === 'host' ? '<button class="primary" data-act="rematch">다시 하기</button>'
+        : '<span class="muted">방을 만든 쪽이 새 게임을 시작할 수 있습니다.</span>'}<button data-act="home">처음으로</button></p>
+      <h2>${squadTitle(0)} (전체 공개)</h2><div class="cards">${[0,1,2].map(i => civCard(0, i, 'all')).join('')}</div>
+      <h2>${nameOf(1)} 문명 (전체 공개)</h2><div class="cards">${[0,1,2].map(i => civCard(1, i, 'all')).join('')}</div>
+      ${historyHTML(true)}`;
+  },
+};
+
+function enterStage() {
+  if (s.over) { phase = 'end'; return; }
+  const legal = legalFighters(s, viewer);
+  ui = { assign:[null, null, null], fighter: legal.length === 1 ? legal[0] : null };
+  tableTurn = s.turn;
+  phase = s.stage;
+}
+
+function beginTurn() {
+  assigns = [null, null];
+  fighters = [null, null];
+  viewer = 0;
+  if (mode === 'bot') {
+    assigns[1] = botAssign(s, 1);
+    enterStage();
+  } else phase = 'pass';
+}
+
+const actions = {
+  start({ mode: m }) { leaveRoom(); mode = m; s = newGame(); beginTurn(); },
+  home() { leaveRoom(); phase = 'start'; },
+  host() {
+    if (typeof Peer === 'undefined') { notice = '온라인 대전에는 인터넷 연결이 필요합니다.'; return; }
+    openRoom();
+  },
+  join() {
+    const code = document.getElementById('join-code').value.trim().toUpperCase();
+    if (typeof Peer === 'undefined') { notice = '온라인 대전에는 인터넷 연결이 필요합니다.'; return; }
+    if (!/^[A-Z0-9]{4}$/.test(code)) { notice = '방 코드 4자리를 입력하세요.'; return; }
+    joinRoom(code);
+  },
+  rejoin() {
+    const code = net.code;
+    leaveRoom();
+    joinRoom(code);
+  },
+  rematch() {
+    s = newGame();
+    assigns = [null, null];
+    fighters = [null, null];
+    sendState();
+    enterStage();
+  },
+  copy({ text }) {
+    navigator.clipboard?.writeText(text).then(() => { notice = '복사했습니다.'; noticeOk = true; render(); }).catch(() => { notice = `복사하지 못했습니다. 직접 알려 주세요: ${text}`; render(); });
+  },
+  ready() { enterStage(); },
+  assign({ i, kind }) {
+    const at = Number(i), other = ui.assign.indexOf(kind);
+    if (other === at) return;
+    if (other >= 0) ui.assign[other] = ui.assign[at];
+    ui.assign[at] = kind;
+    if (ui.assign.filter(k => k === null).length === 1) ui.assign[ui.assign.indexOf(null)] = ['B','W','G'].find(k => !ui.assign.includes(k));
+  },
+  confirmAssign() {
+    if (mode === 'online') return submitOnline('assign', ui.assign);
+    assigns[viewer] = ui.assign;
+    if (!assigns[1 - viewer]) { viewer = 1 - viewer; phase = 'pass'; return; }
+    s = placeStones(s, assigns);
+    viewer = 0;
+    if (mode === 'bot') {
+      fighters[1] = botFight(s, 1);
+      enterStage();
+    } else phase = 'pass';
+  },
+  fight({ i }) { ui.fighter = Number(i); },
+  confirmFight() {
+    if (mode === 'online') return submitOnline('fight', ui.fighter);
+    fighters[viewer] = ui.fighter;
+    if (fighters[1 - viewer] === null) { viewer = 1 - viewer; phase = 'pass'; return; }
+    s = fightTurn(s, fighters);
+    phase = 'result';
+  },
+  next() { if (s.over) phase = 'end'; else if (mode === 'online') enterStage(); else beginTurn(); },
+  tableTab({ t }) { tableTurn = Number(t); },
+  openTable() { sheet.showModal(); },
+  closeTable() { sheet.close(); },
+};
+
+function renderSheet() {
+  sheet.innerHTML = `<div class="sheet-head"><strong>족보표</strong><button data-act="closeTable">닫기</button></div><div class="sheet-body">${tableHTML()}</div>`;
+}
+
+// 다시 그려도 키보드 초점이 같은 버튼에 남게 한다.
+function render() {
+  const focused = document.activeElement?.closest?.('[data-act]')?.dataset;
+  const lost = !net?.lost ? '' : net.role === 'host'
+    ? `<p class="notice">상대와 연결이 끊겼습니다. 상대가 코드 ${net.code}로 다시 참가하면 이어집니다.</p>`
+    : '<p class="notice">방과 연결이 끊겼습니다. <button data-act="rejoin">다시 연결</button></p>';
+  app.innerHTML = (notice ? `<p class="notice ${noticeOk ? 'ok' : ''}">${notice}</p>` : '') + lost + screens[phase]();
+  if (sheet.open) renderSheet(); else if (['assign', 'fight', 'waiting', 'result'].includes(phase)) renderSheet();
+  if (focused) {
+    const again = [...document.querySelectorAll(`[data-act="${focused.act}"]`)].find(b => b.dataset.i === focused.i && b.dataset.kind === focused.kind && b.dataset.t === focused.t);
+    again?.focus({ preventScroll:true });
+  }
+}
+
+document.addEventListener('click', e => {
+  if (e.target === sheet) { sheet.close(); return; }
+  const button = e.target.closest('[data-act]');
+  if (!button || button.disabled) return;
+  const before = phase;
+  notice = '';
+  noticeOk = false;
+  actions[button.dataset.act](button.dataset);
+  render();
+  if (phase !== before) window.scrollTo(0, 0);
+});
+
+render();
