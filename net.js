@@ -41,7 +41,7 @@ function hostAdvance() {
 }
 
 function onGuestMove(msg) {
-  const validAssign = Array.isArray(msg?.assign) && msg.assign.length === 3 && ['B','W','G'].every(k => msg.assign.includes(k));
+  const validAssign = canPlace(s.players[1].stock, msg?.assign);
   if (msg?.type === 'assign' && !s.over && s.stage === 'assign' && validAssign) assigns[1] = msg.assign;
   else if (msg?.type === 'fight' && !s.over && s.stage === 'fight' && legalFighters(s, 1).includes(msg.fighter)) fighters[1] = msg.fighter;
   else return;
@@ -74,7 +74,7 @@ function openRoom() {
 }
 
 function receiveState(next) {
-  next.history.forEach(h => { h.hands = h.seqs.map(q => evaluate(h.turn, q)); });
+  next.history.forEach(h => { h.hands = h.seqs.map((q, p) => evaluate(h.turn, q, next.players[p].cards)); });
   const prev = s;
   s = next;
   if (!prev || next.history.length < prev.history.length || (phase === 'waiting' && next.history.length === prev.history.length)) enterStage();

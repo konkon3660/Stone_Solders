@@ -13,9 +13,6 @@
   --win: #7ccb96;
   --lose: #ec8a7a;
   --special: #86d0d6;
-  --power: #f2994a;
-  --balance: #bb9af7;
-  --freedom: #4fc3f7;
   --stone: 26px;
   --display: "Gowun Batang", "Apple SD Gothic Neo", "Malgun Gothic", serif;
 }
@@ -87,6 +84,8 @@ input { font: inherit; color: var(--ink); background: var(--bg); border: 1px sol
 .card-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 8px; align-items: baseline; }
 .card-head strong { font-family: var(--display); }
 .tag { font-size: .76rem; color: var(--muted); }
+.tag.off { color: var(--lose); font-weight: 700; }
+.card.banned .stones { filter: saturate(.7) brightness(.8); }
 .hand { margin-top: 6px; font-size: .95rem; }
 .info { margin-top: 6px; font-size: .84rem; color: var(--muted); }
 .note { font-size: .8rem; color: var(--special); margin-top: 2px; }
@@ -103,23 +102,29 @@ input { font: inherit; color: var(--ink); background: var(--bg); border: 1px sol
 .cards:not(.mine) { --stone: 20px; }
 @keyframes drop { from { transform: translateY(-6px) scale(1.15); opacity: 0; } }
 
-/* 계열: 권력 주황, 균형 보라, 자유 파랑. 글자로도 적어 색만으로 구분하지 않는다. */
-.fam { display: inline-block; padding: 0 7px; border-radius: 999px; font-size: .8rem; font-weight: 700; line-height: 1.6; color: #15171a; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.fam.P { background: var(--power); }
-.fam.E { background: var(--balance); }
-.fam.F { background: var(--freedom); }
+/* 순위 표시 */
+.rank { display: inline-block; padding: 0 6px; border-radius: 5px; background: var(--panel-2); font-weight: 700; font-size: .85rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rank.top { background: var(--gold); color: #1d1a12; }
+.rank.high { background: #4a5358; }
+.star { color: var(--special); font-weight: 700; }
 .hand-name { font-weight: 700; }
-.card[data-fam] { border-left: 4px solid var(--line); }
-.card[data-fam="P"] { border-left-color: var(--power); }
-.card[data-fam="E"] { border-left-color: var(--balance); }
-.card[data-fam="F"] { border-left-color: var(--freedom); }
-.cycle { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin: 8px 0 10px; color: var(--muted); }
-.cycle small { flex-basis: 100%; font-size: .78rem; }
 .reason { font-size: 1rem; margin-top: 4px; }
+.pill { display: inline-block; padding: 0 7px; border-radius: 999px; font-size: .74rem; font-weight: 700; background: var(--gold); color: #1d1a12; white-space: nowrap; }
+.pill.opp { background: var(--lose); }
 
-/* 돌 고르기: 휴대폰은 가로 세 칸 */
-.picks { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin-top: 8px; }
-.pick { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 7px 3px; text-align: center; font-size: .84rem; line-height: 1.25; min-width: 0; --stone: 22px; }
+/* 남은 돌과 특수 족보 카드 */
+.stock { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin: 6px 0 8px; font-size: .85rem; color: var(--muted); }
+.stock-item { display: inline-flex; align-items: center; gap: 4px; }
+.stock-item b { color: var(--ink); font-variant-numeric: tabular-nums; }
+.dot.gray { box-shadow: 0 0 0 2px #4f7f85; }
+.sp-cards { display: grid; gap: 8px; grid-template-columns: minmax(0, 1fr); }
+.sp-card { display: grid; grid-template-columns: 60px minmax(0, 1fr); gap: 10px; padding: 8px; border-radius: 10px; background: #1d3b3e; box-shadow: inset 0 0 0 1px #3f7277; }
+.sp-card p { margin: 0; }
+.sp-card.past { opacity: .55; }
+
+/* 돌 고르기: 휴대폰은 가로 네 칸 */
+.picks { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; margin-top: 8px; }
+.pick { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 7px 2px; text-align: center; font-size: .8rem; line-height: 1.25; min-width: 0; --stone: 22px; }
 .pick small { color: var(--muted); font-size: .72rem; }
 .pick .name { word-break: keep-all; }
 .pick[aria-pressed="true"] { border: 2px solid var(--gold); background: #3a372c; padding: 6px 2px; }
@@ -140,8 +145,6 @@ input { font: inherit; color: var(--ink); background: var(--bg); border: 1px sol
 .hand-head h2 { margin: 0; }
 .points { font-size: .85rem; color: var(--gold); font-weight: 700; white-space: nowrap; }
 .hand-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
-.fam-group h3 { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; margin: 14px 0 6px; font-size: .85rem; font-weight: 400; color: var(--muted); }
-.fam-group .fam { font-size: .9rem; }
 .hand-row { display: grid; grid-template-columns: 60px minmax(0, 1fr); gap: 10px; padding: 7px; border-radius: 8px; background: var(--panel-2); }
 .hand-row.special { background: #1d3b3e; box-shadow: inset 0 0 0 1px #3f7277; }
 .hand-row.occupied { box-shadow: inset 0 0 0 2px var(--gold); }
@@ -228,6 +231,7 @@ ol.history li { padding: 6px 0; border-top: 1px solid var(--line); }
   .duel .card { --stone: 26px; }
   .hand-art { aspect-ratio: 16 / 10; }
   .hand-big { font-size: 1.25rem; }
+  .sp-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .modes { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .hero { min-height: 320px; }
   .hero h1 { font-size: 3rem; }
