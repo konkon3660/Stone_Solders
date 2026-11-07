@@ -13,6 +13,9 @@
   --win: #7ccb96;
   --lose: #ec8a7a;
   --special: #86d0d6;
+  --power: #f2994a;
+  --balance: #bb9af7;
+  --freedom: #4fc3f7;
   --stone: 26px;
   --display: "Gowun Batang", "Apple SD Gothic Neo", "Malgun Gothic", serif;
 }
@@ -24,7 +27,10 @@ body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.55 syst
 h1, h2 { font-family: var(--display); font-weight: 700; margin: 0; text-wrap: balance; }
 h1 { font-size: 1.45rem; line-height: 1.25; }
 h2 { font-size: 1.1rem; margin: 18px 0 8px; }
+h2.act { font-size: 1.2rem; color: var(--gold); }
+h2.sub { font-family: inherit; font-size: .92rem; font-weight: 600; color: var(--muted); margin-top: 22px; }
 p { margin: 4px 0; }
+.nowrap { white-space: nowrap; }
 img { max-width: 100%; display: block; }
 .muted { color: var(--muted); font-size: .92rem; }
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px; margin-top: 12px; }
@@ -42,6 +48,7 @@ input { font: inherit; color: var(--ink); background: var(--bg); border: 1px sol
 /* 점수와 턴 진행 */
 .hud { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 14px; }
 .score { font-size: 1.05rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.score b { font-size: 1.4rem; }
 .pips { display: flex; gap: 5px; list-style: none; margin: 0; padding: 0; }
 .pip { width: 34px; text-align: center; font-size: .75rem; line-height: 1.2; color: var(--muted); border: 1px solid var(--line); border-radius: 6px; padding: 3px 0; font-variant-numeric: tabular-nums; }
 .pip b { display: block; font-size: .8rem; color: var(--ink); }
@@ -56,6 +63,12 @@ input { font: inherit; color: var(--ink); background: var(--bg); border: 1px sol
 .era-text { position: relative; z-index: 1; padding: 34px 14px 10px; width: 100%; }
 .era-text p { color: #e6e6df; font-size: .92rem; }
 .era cite { display: block; margin-top: 2px; font-style: normal; font-size: .72rem; color: #c3c7c4; }
+.era:not(.hero) { min-height: 0; }
+.era:not(.hero)::after { background: linear-gradient(to right, rgba(10, 12, 14, .92) 40%, rgba(10, 12, 14, .45)); }
+.era:not(.hero) .era-text { padding: 12px 14px; }
+.era:not(.hero) h1 { font-size: 1.15rem; }
+.era:not(.hero) p { font-size: .85rem; }
+.era:not(.hero) cite { display: none; }
 
 /* 단계 표시 */
 .steps { display: flex; gap: 6px; list-style: none; padding: 0; margin: 10px 0 0; font-size: .85rem; color: var(--muted); }
@@ -67,14 +80,13 @@ input { font: inherit; color: var(--ink); background: var(--bg); border: 1px sol
 .rail { display: none; }
 .cards { display: grid; gap: 8px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .cards.mine { grid-template-columns: minmax(0, 1fr); }
+.cards.mine .card { background: #232a2f; border-color: #56616a; }
+.cards:not(.mine) .card { background: #191e21; border-color: #2b3237; }
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px; min-width: 0; }
-.card.selected, .card.winner { border: 2px solid var(--gold); padding: 9px; }
-.card.banned { background: #1a1f22; }
-.card.banned .stones { filter: saturate(.7) brightness(.8); }
+.cards .card.selected, .card.winner { border: 2px solid var(--gold); padding: 9px; }
 .card-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 8px; align-items: baseline; }
 .card-head strong { font-family: var(--display); }
 .tag { font-size: .76rem; color: var(--muted); }
-.tag.off { color: var(--lose); font-weight: 700; }
 .hand { margin-top: 6px; font-size: .95rem; }
 .info { margin-top: 6px; font-size: .84rem; color: var(--muted); }
 .note { font-size: .8rem; color: var(--special); margin-top: 2px; }
@@ -91,11 +103,19 @@ input { font: inherit; color: var(--ink); background: var(--bg); border: 1px sol
 .cards:not(.mine) { --stone: 20px; }
 @keyframes drop { from { transform: translateY(-6px) scale(1.15); opacity: 0; } }
 
-/* 순위 표시 */
-.rank { display: inline-block; padding: 0 6px; border-radius: 5px; background: var(--panel-2); font-weight: 700; font-size: .85rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.rank.top { background: var(--gold); color: #1d1a12; }
-.rank.high { background: #4a5358; }
-.star { color: var(--special); font-weight: 700; }
+/* 계열: 권력 주황, 균형 보라, 자유 파랑. 글자로도 적어 색만으로 구분하지 않는다. */
+.fam { display: inline-block; padding: 0 7px; border-radius: 999px; font-size: .8rem; font-weight: 700; line-height: 1.6; color: #15171a; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.fam.P { background: var(--power); }
+.fam.E { background: var(--balance); }
+.fam.F { background: var(--freedom); }
+.hand-name { font-weight: 700; }
+.card[data-fam] { border-left: 4px solid var(--line); }
+.card[data-fam="P"] { border-left-color: var(--power); }
+.card[data-fam="E"] { border-left-color: var(--balance); }
+.card[data-fam="F"] { border-left-color: var(--freedom); }
+.cycle { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin: 8px 0 10px; color: var(--muted); }
+.cycle small { flex-basis: 100%; font-size: .78rem; }
+.reason { font-size: 1rem; margin-top: 4px; }
 
 /* 돌 고르기: 휴대폰은 가로 세 칸 */
 .picks { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin-top: 8px; }
@@ -105,16 +125,6 @@ input { font: inherit; color: var(--ink); background: var(--bg); border: 1px sol
 .pick[aria-pressed="true"] { border: 2px solid var(--gold); background: #3a372c; padding: 6px 2px; }
 .fight { width: 100%; margin-top: 8px; }
 .fight[aria-pressed="true"] { background: var(--gold); border-color: var(--gold); color: #1d1a12; font-weight: 700; }
-
-/* 출전 상성표 */
-.matchup { width: 100%; max-width: 460px; table-layout: fixed; border-collapse: separate; border-spacing: 4px; font-variant-numeric: tabular-nums; }
-.matchup th { font-size: .82rem; font-weight: 600; color: var(--muted); padding: 2px; }
-.matchup td { text-align: center; padding: 9px 2px; border-radius: 6px; background: var(--panel-2); font-weight: 700; }
-.matchup thead td { background: none; }
-.matchup td.win { background: #24452f; color: #a8ecbd; }
-.matchup td.lose { background: #4d2a25; color: #f6b3a7; }
-.matchup td.mixed { background: #454029; color: #f0dc9c; }
-.matchup tr.picked th:first-child { color: var(--gold); }
 
 /* 고정 버튼 줄 */
 .actionbar { position: sticky; bottom: 0; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 14px calc(max(14px, env(safe-area-inset-left, 0px)) * -1) 0; padding: 10px max(14px, env(safe-area-inset-right, 0px)) calc(10px + env(safe-area-inset-bottom, 0px)) max(14px, env(safe-area-inset-left, 0px)); background: rgba(20, 24, 27, .96); border-top: 1px solid var(--line); }
@@ -130,6 +140,8 @@ input { font: inherit; color: var(--ink); background: var(--bg); border: 1px sol
 .hand-head h2 { margin: 0; }
 .points { font-size: .85rem; color: var(--gold); font-weight: 700; white-space: nowrap; }
 .hand-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.fam-group h3 { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; margin: 14px 0 6px; font-size: .85rem; font-weight: 400; color: var(--muted); }
+.fam-group .fam { font-size: .9rem; }
 .hand-row { display: grid; grid-template-columns: 60px minmax(0, 1fr); gap: 10px; padding: 7px; border-radius: 8px; background: var(--panel-2); }
 .hand-row.special { background: #1d3b3e; box-shadow: inset 0 0 0 1px #3f7277; }
 .hand-row.occupied { box-shadow: inset 0 0 0 2px var(--gold); }
@@ -164,14 +176,15 @@ dialog::backdrop { background: rgba(0, 0, 0, .6); }
 .result-line { font-family: var(--display); font-size: 1.6rem; font-weight: 700; margin-top: 2px; }
 .duel-card { padding-top: 0; overflow: hidden; }
 .card.duel-card.winner { padding-top: 0; }
-.hand-art { width: calc(100% + 20px); max-width: none; margin: 0 -10px 10px; aspect-ratio: 16 / 10; object-fit: cover; }
+.hand-art { width: calc(100% + 20px); max-width: none; margin: 0 -10px 10px; aspect-ratio: 1; object-fit: cover; }
 .winner .hand-art { width: calc(100% + 18px); margin: 0 -9px 10px; }
-.hand-big { margin-top: 6px; font-family: var(--display); font-size: 1.25rem; font-weight: 700; }
+.hand-big { margin-top: 6px; font-family: var(--display); font-size: 1.05rem; font-weight: 700; line-height: 1.35; }
 .credit { display: block; margin-top: 4px; font-style: normal; font-size: .72rem; color: var(--muted); }
 .result-line.win { color: var(--win); }
 .result-line.lose { color: var(--lose); }
-.duel { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; margin-top: 8px; }
-.duel .card { --stone: 26px; animation: rise .25s ease-out; }
+.duel { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 8px; }
+.duel .card { --stone: 18px; animation: rise .25s ease-out; }
+.duel .muted { font-size: .82rem; }
 @keyframes rise { from { transform: translateY(8px); opacity: 0; } }
 
 /* 기록 */
@@ -209,7 +222,12 @@ ol.history li { padding: 6px 0; border-top: 1px solid var(--line); }
   .pick { flex-direction: row; text-align: left; padding: 6px 8px; }
   .pick[aria-pressed="true"] { padding: 5px 7px; }
   .pick .labels { display: flex; flex-direction: column; }
-  .duel { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .era:not(.hero) h1 { font-size: 1.5rem; }
+  .era:not(.hero) p { font-size: .92rem; }
+  .era:not(.hero) cite { display: block; }
+  .duel .card { --stone: 26px; }
+  .hand-art { aspect-ratio: 16 / 10; }
+  .hand-big { font-size: 1.25rem; }
   .modes { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .hero { min-height: 320px; }
   .hero h1 { font-size: 3rem; }

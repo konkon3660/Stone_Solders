@@ -28,6 +28,7 @@ function sendState() {
 function hostAdvance() {
   if (s.stage === 'assign' && assigns[0] && assigns[1]) {
     s = placeStones(s, assigns);
+    if (s.stage === 'assign') assigns = [null, null]; // 전투 없는 턴은 바로 다음 배치로
     sendState();
     if (phase === 'waiting') enterStage();
   } else if (s.stage === 'fight' && fighters[0] !== null && fighters[1] !== null) {
