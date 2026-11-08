@@ -12,7 +12,7 @@ const comboText = (b, w) => b && w ? `흑 ${b} / 백 ${w}` : b ? `흑 ${b}` : `�
 const batchim = word => (word.charCodeAt(word.length - 1) - 0xAC00) % 28 !== 0;
 const eul = word => batchim(word) ? '을' : '를';
 const iga = word => batchim(word) ? '이' : '가';
-const star = e => e.special ? ' <span class="star" aria-label="특수 족보">★</span>' : '';
+const star = e => e.special ? ' <span class="star" aria-label="불가사의">★</span>' : '';
 const rankTag = rank => `<b class="rank ${rank === 1 ? 'top' : rank <= 3 ? 'high' : ''}">${rank}위</b>`;
 const handLine = e => `${rankTag(e.rank)} <span class="hand-name">${e.name}</span>${star(e)}`;
 const beatText = (t, count) => { const names = TABLES[t].slice(0, count).map(row => row[2]); return `${names.join(', ')}${eul(names.at(-1))} 이긴다`; };
@@ -42,7 +42,6 @@ function stoneHTML(st, owner, view) {
 }
 
 function banTag(civ) {
-  if (!pointsFor(s.turn)) return '';
   const left = civ.bannedThrough - s.turn + 1;
   return left > 0 ? `<span class="tag off">출전 제한 ${left}턴</span>` : '<span class="tag">출전 가능</span>';
 }
@@ -60,9 +59,17 @@ function stockHTML(p, view, picking = []) {
 
 const inGame = () => ['assign', 'fight', 'waiting'].includes(phase) && !s.over;
 
-// 참고용 카드. 아직 모르는 돌이 있으면 가능한 순위 범위를, 상대 문명이면 카드에 따라 가능한 특수 족보도 보여 준다.
+// 이 문명이 지나온 테크: 턴마다 그때의 족보 이름. 숨은 돌이 있는 상대 문명은 그리지 않는다.
+function techPath(owner, i, view) {
+  const seq = colorsOf(s.players[owner].civs[i]), cards = s.players[owner].cards;
+  if (!seq || (view !== owner && view !== 'all')) return '';
+  const steps = [...seq].map((_, k) => { const e = evaluate(k + 1, seq.slice(0, k + 1), cards); return `<span>${e.name}${e.special ? '★' : ''}</span>`; });
+  return `<p class="path" aria-label="지나온 테크">${steps.join(' › ')}</p>`;
+}
+
+// 참고용 카드. 아직 모르는 돌이 있으면 가능한 순위 범위를, 상대 문명이면 카드에 따라 가능한 불가사의도 보여 준다.
 function civCard(owner, i, view) {
-  const civ = s.players[owner].civs[i], banned = civ.bannedThrough >= s.turn && !s.over && pointsFor(s.turn) > 0;
+  const civ = s.players[owner].civs[i], banned = civ.bannedThrough >= s.turn && !s.over;
   let info = '';
   if (inGame()) {
     if (banned) info = '이번 턴 출전 불가';
@@ -76,6 +83,7 @@ function civCard(owner, i, view) {
   return `<article class="card ${banned ? 'banned' : ''}">
     <div class="card-head"><strong>문명 ${LETTERS[i]}</strong>${s.over ? '' : banTag(civ)}</div>
     <div class="stones">${civ.stones.map(st => stoneHTML(st, owner, view)).join('') || '<span class="empty">돌 없음</span>'}</div>
+    ${techPath(owner, i, view)}
     <div class="info">${info}</div>
   </article>`;
 }
@@ -85,7 +93,7 @@ function assignCard(i) {
   const picks = TOKEN_KEYS.map(k => {
     const [kind, color] = TOKENS[k], e = evaluate(s.turn, seq + color, me.cards);
     const left = me.stock[k] - ui.assign.filter((x, j) => x === k && j !== i).length;
-    return `<button class="pick" data-act="assign" data-i="${i}" data-kind="${k}" aria-pressed="${chosen === k}" ${left > 0 ? '' : 'disabled'} aria-label="문명 ${LETTERS[i]}에 ${TOKEN_NAME[k]} 주기, 남은 ${left}개: ${e.rank}위 ${e.name}${e.special ? ' 특수 족보' : ''}">
+    return `<button class="pick" data-act="assign" data-i="${i}" data-kind="${k}" aria-pressed="${chosen === k}" ${left > 0 ? '' : 'disabled'} aria-label="문명 ${LETTERS[i]}에 ${TOKEN_NAME[k]} 주기, 남은 ${left}개: ${e.rank}위 ${e.name}${e.special ? ' 불가사의' : ''}">
       <span class="stone ${color === 'B' ? 'b' : 'w'}${kind === 'G' ? ' from-gray' : ''}"></span>
       <span class="labels"><small>${kind === 'G' ? '회색' : COLOR_NAME[color]}</small><span class="name">${handLine(e)}</span></span>
     </button>`;
@@ -94,6 +102,7 @@ function assignCard(i) {
   return `<article class="card">
     <div class="card-head"><strong>문명 ${LETTERS[i]}</strong>${banTag(civ)}</div>
     <div class="stones">${civ.stones.map(st => stoneHTML(st, v, v)).join('')}${pending || (civ.stones.length ? '' : '<span class="empty">돌 없음</span>')}</div>
+    ${techPath(v, i, v)}
     <div class="picks">${picks}</div>
   </article>`;
 }
@@ -105,6 +114,7 @@ function fightCard(i) {
   return `<article class="card ${ui.fighter === i ? 'selected' : legal ? '' : 'banned'}">
     <div class="card-head"><strong>문명 ${LETTERS[i]}</strong>${banTag(civ)}</div>
     <div class="stones">${civ.stones.map(st => stoneHTML(st, v, v)).join('')}</div>
+    ${techPath(v, i, v)}
     <div class="hand-mini">${artImg(HAND_ART[e.name], 'thumb')}<div>
       <p class="hand">${handLine(e)}</p>
       <p class="muted">${e.why}</p>
@@ -114,7 +124,7 @@ function fightCard(i) {
   </article>`;
 }
 
-// 내 특수 족보 카드. 상대는 모른다.
+// 내 불가사의 카드. 상대는 모른다.
 function cardsHTML(view) {
   const shown = shownCards(s, 1 - view), used = shownCards(s, view);
   const card = name => {
@@ -125,7 +135,7 @@ function cardsHTML(view) {
       <p class="beats">${beatText(t, row[6] ?? 1)}</p>
     </div></article>`;
   };
-  return `<h2 class="sub">내 특수 족보 카드 · 상대는 모름</h2>
+  return `<h2 class="sub">내 불가사의 카드 · 상대는 모름</h2>
     <div class="sp-cards">${s.players[view].cards.map(card).join('')}</div>
     <p class="muted">${nameOf(1 - view)} 카드 ${HAND_CARDS}장: ${shown.length ? `${shown.join(', ')} 공개` : '모두 비공개'}${shown.length === 1 ? ', 1장 비공개' : ''}</p>`;
 }
@@ -165,10 +175,9 @@ function tableHTML() {
       </div>
     </li>`;
   return `<div class="tabs" role="group" aria-label="턴별 족보표">${Object.keys(TABLES).map(u => `<button class="tab ${Number(u) === current ? 'current' : ''}" data-act="tableTab" data-t="${u}" aria-pressed="${Number(u) === t}" aria-label="${u}턴 족보">${u}</button>`).join('')}</div>
-    <div class="hand-head"><h2>${t}턴 ${ERAS[t][0]}</h2><span class="points">${pointsFor(t) ? `승리 ${pointsFor(t)}점` : '전투 없음'}</span></div>
-    ${pointsFor(t) ? '' : '<p class="muted">1턴은 돌만 놓고 전투하지 않습니다.</p>'}
+    <div class="hand-head"><h2>${t}턴 ${ERAS[t][0]}</h2><span class="points">승리 ${pointsFor(t)}점</span></div>
     <ol class="hand-list">${TABLES[t].map(row).join('')}</ol>
-    <p class="legend">위에 있을수록 강하고, 같은 족보끼리는 무승부. ${t >= 3 ? `★ 특수 족보는 그 카드를 가진 사람만 완성하며, 적힌 상위 족보를 이기고 나머지와는 순위대로 겨룹니다. 카드가 없으면 같은 돌도 일반 족보입니다. <span class="any">${dot('B')}${dot('W')}</span> 칸 안의 돌은 순서 무관.` : ''}${t === current ? ' <span class="chip">A</span> 내 문명 <span class="chip opp">상대 A</span> 상대 문명의 현재 자리.' : ''}</p>`;
+    <p class="legend">위에 있을수록 강하고, 같은 족보끼리는 무승부. ${t >= 3 ? `★ 불가사의는 그 카드를 가진 사람만 완성하며, 적힌 상위 족보를 이기고 나머지와는 순위대로 겨룹니다. 카드가 없으면 같은 돌도 일반 족보입니다. <span class="any">${dot('B')}${dot('W')}</span> 칸 안의 돌은 순서 무관.` : ''}${t === current ? ' <span class="chip">A</span> 내 문명 <span class="chip opp">상대 A</span> 상대 문명의 현재 자리.' : ''}</p>`;
 }
 
 function historyHTML(open = false) {
@@ -180,7 +189,7 @@ function historyHTML(open = false) {
   return `<details ${open ? 'open' : ''}><summary>전투 기록 (${s.history.length}턴)</summary><ol class="history">${lines}</ol></details>`;
 }
 
-// 전투 결과의 이유: 순위 차이인지, ★ 특수 족보가 상위 족보를 잡았는지.
+// 전투 결과의 이유: 순위 차이인지, ★ 불가사의가 상위 족보를 잡았는지.
 function reasonText(h) {
   if (h.winner === null) return `같은 족보(${h.hands[0].name})라 무승부`;
   const w = h.hands[h.winner], l = h.hands[1 - h.winner];
@@ -191,9 +200,9 @@ function reasonText(h) {
 function hud(now) {
   const pips = Object.keys(TABLES).map(Number).map(t => {
     const h = s.history.find(x => x.turn === t);
-    const tag = !h ? (pointsFor(t) ? pointsFor(t) + '점' : '준비') : h.winner === null ? '무' : mode === 'hotseat' ? `P${h.winner + 1}` : h.winner === viewer ? '승' : '패';
+    const tag = !h ? pointsFor(t) + '점' : h.winner === null ? '무' : mode === 'hotseat' ? `P${h.winner + 1}` : h.winner === viewer ? '승' : '패';
     const tone = h && h.winner !== null && mode !== 'hotseat' ? (h.winner === viewer ? 'win' : 'lose') : '';
-    return `<li class="pip ${t === now ? 'now' : ''} ${tone}" aria-label="${t}턴 ${h ? tag : pointsFor(t) ? `승리 ${pointsFor(t)}점` : '전투 없음'}">${t}턴<b>${tag}</b></li>`;
+    return `<li class="pip ${t === now ? 'now' : ''} ${tone}" aria-label="${t}턴 ${h ? tag : `승리 ${pointsFor(t)}점`}">${t}턴<b>${tag}</b></li>`;
   }).join('');
   return `<header class="hud">
     <div class="score">${nameOf(0)} <b>${s.players[0].score}</b>점 : <b>${s.players[1].score}</b>점 ${nameOf(1)}</div>
@@ -202,7 +211,7 @@ function hud(now) {
 }
 
 function eraBanner(t) {
-  return `<section class="era">${artImg(ERA_ART[t])}<div class="era-text"><h1>${t}/${LAST_TURN}턴 · ${ERAS[t][0]}</h1><p>${ERAS[t][1]}${pointsFor(t) ? ` <span class="nowrap">승리 시 ${pointsFor(t)}점.</span>` : ''}</p><cite>${artCredit(ERA_ART[t])}</cite></div></section>`;
+  return `<section class="era">${artImg(ERA_ART[t])}<div class="era-text"><h1>${t}/${LAST_TURN}턴 · ${ERAS[t][0]}</h1><p>${ERAS[t][1]} <span class="nowrap">승리 시 ${pointsFor(t)}점.</span></p><cite>${artCredit(ERA_ART[t])}</cite></div></section>`;
 }
 
 const steps = now => `<ol class="steps">${['돌 배치', '문명 출전', '전투'].map((label, i) => `<li class="${i === now ? 'now' : ''}" ${i === now ? 'aria-current="step"' : ''}>${i + 1}. ${label}</li>`).join('')}</ol>`;
@@ -212,7 +221,7 @@ const layout = (main, bar = '') => `<div class="layout"><main>${main}${bar}</mai
 const screens = {
   start: () => `<section class="era hero">${artImg(ERA_ART[5])}<div class="era-text">
       <h1>문명 대전</h1>
-      <p>돌을 나눠 키운 세 문명으로 일곱 시대를 겨룹니다.</p>
+      <p>돌을 나눠 세 문명의 테크를 올리고, 석기 시대부터 정보 시대까지 겨룹니다.</p>
       <cite>${artCredit(ERA_ART[5])}</cite>
     </div></section>
     <div class="modes">
@@ -228,17 +237,17 @@ const screens = {
     <details class="panel" open><summary>게임 방법</summary>
       <ol class="rules">
         <li>처음에 돌 21개를 받습니다: ${dot('B')} 흑 7, ${dot('W')} 백 7, ${dot('G')} 회색 7. 회색돌마다 속 색이 랜덤으로 정해지고 나만 압니다.</li>
-        <li>★ 특수 족보 카드 16장 중 2장을 비밀로 받습니다. 카드에 적힌 특수 족보는 그 카드를 가진 사람만 완성할 수 있습니다.</li>
+        <li>★ 불가사의 카드 16장 중 2장을 비밀로 받습니다. 카드에 적힌 불가사의는 그 카드를 가진 사람만 완성할 수 있습니다.</li>
         <li>매 턴 내 문명 3개에 돌을 하나씩 줍니다. 색은 자유라서 한 턴에 흑만 3개도 됩니다. 21개를 7턴 동안 모두 씁니다.</li>
         <li>양쪽 배치가 동시에 공개됩니다. 상대 회색돌은 "?"로 보입니다. 배치를 보고 출전할 문명 하나를 비공개로 고릅니다. 출전한 문명의 회색돌은 그때 공개됩니다.</li>
-        <li>족보표에서 위에 있을수록 강하고, 같은 족보끼리는 무승부입니다. ★ 특수 족보는 적힌 상위 족보를 이기고 나머지와는 순위대로 겨룹니다. 전투에 쓴 카드는 공개됩니다.</li>
+        <li>족보표에서 위에 있을수록 강하고, 같은 족보끼리는 무승부입니다. ★ 불가사의는 적힌 상위 족보를 이기고 나머지와는 순위대로 겨룹니다. 전투에 쓴 카드는 공개됩니다.</li>
         <li>이긴 문명은 다음 2턴, 지거나 비긴 문명은 다음 1턴 출전할 수 없습니다.</li>
-        <li>1턴은 전투 없이 문명을 세웁니다. 2~7턴 승리 점수는 1·1·2·2·2·3점이고, 동점이면 마지막 전투 승자가 이깁니다.</li>
+        <li>승리 점수는 1~3턴 1점, 4~6턴 2점, 7턴 3점입니다. 동점이면 마지막 전투 승자가 이깁니다.</li>
       </ol>
     </details>
     <details class="panel"><summary>그림 출처</summary>
       <ul class="credits">${[...Object.values(ERA_ART), ...Object.values(HAND_ART)].map(art => `<li>${artCredit(art)}</li>`).join('')}</ul>
-      <p class="muted">모두 저작권이 끝난 작품이며 위키미디어 공용에서 가져왔습니다.</p>
+      <p class="muted">모두 저작권이 끝났거나 CC0으로 풀린 자료이며 위키미디어 공용에서 가져왔습니다.</p>
     </details>`,
 
   lobby: () => net.role === 'host'
@@ -278,7 +287,7 @@ const screens = {
     const v = viewer, t = s.turn, missing = ui.assign.includes(null);
     return `${hud(t)}${eraBanner(t)}${steps(0)}
       ${layout(`<h2 class="act">${squadTitle(v)}: 돌 나눠 주기</h2>
-        <p class="muted">문명마다 돌 하나씩, 색은 자유입니다.${pointsFor(t) ? '' : ' 1턴은 전투가 없습니다.'}</p>
+        <p class="muted">문명마다 돌 하나씩, 색은 자유입니다.</p>
         ${stockHTML(v, v, ui.assign)}
         <div class="cards mine">${[0,1,2].map(assignCard).join('')}</div>
         ${cardsHTML(v)}
@@ -334,7 +343,7 @@ const screens = {
       <p class="bar">${mode !== 'online' ? `<button class="primary" data-act="start" data-mode="${mode}">다시 하기</button>`
         : net?.role === 'host' ? '<button class="primary" data-act="rematch">다시 하기</button>'
         : '<span class="muted">방을 만든 쪽이 새 게임을 시작할 수 있습니다.</span>'}<button data-act="home">처음으로</button></p>
-      <p class="muted">특수 족보 카드 · ${[0, 1].map(p => `${nameOf(p)}: ${s.players[p].cards.join(', ')}`).join(' · ')}</p>
+      <p class="muted">불가사의 카드 · ${[0, 1].map(p => `${nameOf(p)}: ${s.players[p].cards.join(', ')}`).join(' · ')}</p>
       <h2 class="sub">${squadTitle(0)} (전체 공개)</h2><div class="cards">${[0,1,2].map(i => civCard(0, i, 'all')).join('')}</div>
       <h2 class="sub">${nameOf(1)} 문명 (전체 공개)</h2><div class="cards">${[0,1,2].map(i => civCard(1, i, 'all')).join('')}</div>
       ${historyHTML(true)}`;
@@ -345,7 +354,6 @@ function enterStage() {
   if (s.over) { phase = 'end'; return; }
   const legal = legalFighters(s, viewer);
   ui = { assign:[null, null, null], fighter:s.stage === 'fight' && legal.length === 1 ? legal[0] : null };
-  if (s.stage === 'assign' && !s.history.length && s.turn > 1) { notice = '1턴은 전투 없이 끝났습니다. 상대가 놓은 돌을 보고 이번 턴을 준비하세요.'; noticeOk = true; }
   tableTurn = s.turn;
   phase = s.stage;
 }
@@ -395,7 +403,6 @@ const actions = {
     assigns[viewer] = ui.assign;
     if (!assigns[1 - viewer]) { viewer = 1 - viewer; phase = 'pass'; return; }
     s = placeStones(s, assigns);
-    if (s.stage === 'assign') return beginTurn();
     viewer = 0;
     if (mode === 'bot') {
       fighters[1] = botFight(s, 1);

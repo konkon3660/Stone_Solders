@@ -3,88 +3,89 @@
 // 배치 토큰: 'B' 흑돌, 'W' 백돌, 'GB' 속이 흑인 회색돌, 'GW' 속이 백인 회색돌.
 const LAST_TURN = 7;
 const STOCK = 7;      // 처음에 흑, 백, 회색을 7개씩 받아 일곱 턴 동안 나눠 쓴다
-const HAND_CARDS = 2; // 특수 족보 카드를 2장씩 비밀로 받는다
+const HAND_CARDS = 2; // 불가사의 카드를 2장씩 비밀로 받는다
 
-// 턴별 족보표, 강한 순서: [흑 개수, 백 개수, 족보 이름, 이유, 특수 족보의 순서 규칙, 화면에 그릴 모양, 이기는 상위 족보 수(기본 1)]
-// ★ 특수 족보는 그 카드를 가진 사람만 완성한다. 카드가 없으면 같은 돌도 같은 개수의 일반 족보다.
+// 턴별 족보표, 강한 순서: [흑 개수, 백 개수, 족보 이름, 이유, 불가사의의 순서 규칙, 화면에 그릴 모양, 이기는 상위 족보 수(기본 1)]
+// 시대마다 기술이 바뀐다. 흑은 군사 기술, 백은 학문과 문화, 섞이면 제도와 경제.
+// ★ 불가사의는 그 카드를 가진 사람만 완성한다. 카드가 없으면 같은 돌도 같은 개수의 일반 족보다.
 // 모양 표기: B와 W는 돌, []는 순서 무관, | 뒤는 덧붙이는 설명.
 const TABLES = {
   1: [
-    [1,0,'족장','힘으로 무리를 이끈다'],
-    [0,1,'유랑민','자유롭지만 따르는 이가 없다'],
+    [1,0,'돌창','날카로운 돌로 사냥감과 적을 먼저 쓰러뜨린다'],
+    [0,1,'불','밤을 밝혔지만 맞서 싸울 무기가 없다'],
   ],
   2: [
-    [1,1,'부족 연맹','힘과 자유를 합쳐 가장 크다'],
-    [2,0,'약탈 부족','강하지만 홀로 싸운다'],
-    [0,2,'작은 마을','평화롭지만 지킬 힘이 없다'],
+    [1,1,'농경','힘으로 땅을 지키고 지혜로 씨를 뿌려 가장 크게 정착했다'],
+    [2,0,'청동검','단단한 무기를 가졌지만 먹여 살릴 땅이 없다'],
+    [0,2,'문자','기록을 남기기 시작했지만 지킬 힘이 없다'],
   ],
   3: [
-    [2,1,'왕국','왕의 권력에 백성의 지지까지 얻었다'],
-    [3,0,'폭군','힘은 세지만 민심이 없다'],
-    [1,2,'시민 봉기','왕이 섰지만 자유가 연달아 쌓여 왕을 끌어내린다',/^BWW$/,'BWW'],
-    [1,2,'도시국가','자유롭지만 나라가 작다'],
-    [2,1,'궁정 쿠데타','백성이 세운 왕을 귀족이 연달아 끌어내린다',/^WBB$/,'WBB',2],
-    [0,3,'중우정치','말만 많고 결정하지 못한다'],
+    [2,1,'법전','철의 힘에 규칙을 더해 나라를 다스린다'],
+    [3,0,'전차','힘은 세지만 다스릴 법이 없다'],
+    [1,2,'대도서관','왕이 세운 도서관에 지식이 연달아 쌓여 어떤 법전보다 앞선다',/^BWW$/,'BWW'],
+    [1,2,'화폐','부를 쌓았지만 군대가 작다'],
+    [2,1,'트로이 목마','선물인 척 성에 들어간 뒤 군사가 연달아 쏟아진다',/^WBB$/,'WBB',2],
+    [0,3,'철학','묻고 따지기만 하고 결정하지 못한다'],
   ],
   4: [
-    [4,0,'절대왕정','모든 권력이 왕에게 모였다'],
-    [3,1,'군사정권','군대로 다스리지만 정통성이 약하다'],
-    [2,2,'헌법 제정','자유가 권력을 앞뒤로 감싸 왕권을 묶는다',/^WBBW$/,'WBBW'],
-    [2,2,'느슨한 연방','균형은 있지만 결속이 약하다'],
-    [1,3,'허약한 정부','권력이 모자라 명령이 먹히지 않는다'],
-    [1,3,'망명 정부','쫓겨난 왕실이 밖에서 세력을 모아 돌아온다',/^BWWW$/,'BWWW',2],
-    [3,1,'친위 쿠데타','왕의 근위대가 왕을 갈아치운다',/^WBBB$/,'WBBB'],
-    [0,4,'무정부 상태','국가의 시대에 국가가 없다'],
+    [4,0,'기사단','갑옷 입은 기사들이 모든 땅을 지배한다'],
+    [3,1,'봉건제','영주들이 땅과 기사를 나눠 가져 왕의 힘이 약하다'],
+    [2,2,'마그나 카르타','백성과 귀족이 왕을 앞뒤로 묶어 기사의 힘을 누른다',/^WBBW$/,'WBBW'],
+    [2,2,'길드','장인과 상인이 손잡았지만 결속이 약하다'],
+    [1,3,'대학','학문은 꽃피지만 지킬 힘이 모자란다'],
+    [1,3,'인쇄기','한 대의 기계가 지식을 연달아 찍어 내 기사와 영주의 시대를 끝낸다',/^BWWW$/,'BWWW',2],
+    [3,1,'만리장성','백성이 쌓은 성벽 위에 군대가 늘어서 기사의 돌격을 막는다',/^WBBB$/,'WBBB'],
+    [0,4,'수도원','기도와 필사만 하고 칼을 들지 않는다'],
   ],
   5: [
-    [3,2,'대제국','군사력과 번영을 모두 갖췄다'],
-    [2,3,'상업 제국','부유하지만 군대가 조금 모자란다'],
-    [4,1,'제국 분열','권력을 쌓은 제국 안에서 자유가 터져 나라가 갈라진다',/^BBB/,'BBB[BW]'],
-    [4,1,'군사 제국','군대뿐이라 재정이 버티지 못한다'],
-    [5,0,'요새 국가','지킬 뿐 뻗어 나가지 못한다'],
-    [0,5,'중립 도시','부유하지만 군대가 없다'],
-    [1,4,'독립 전쟁','오랜 식민지가 막판에 무기를 든다',/^WWW/,'WWW[WB]'],
-    [2,3,'해상 동맹','작은 도시들이 번갈아 손잡아 바다를 지배한다',/^WBWBW$/,'WBWBW',2],
-    [3,2,'용병 반란','제국이 고용한 용병이 칼끝을 돌린다',/^BWBWB$/,'BWBWB',2],
-    [1,4,'식민지','번영을 제국에 빼앗긴다'],
+    [3,2,'무적함대','함대의 힘과 무역의 부를 모두 갖췄다'],
+    [2,3,'동인도 회사','부유하지만 군대가 조금 모자란다'],
+    [4,1,'다빈치 공방','천재가 전쟁 기계를 연달아 설계해 무적함대보다 앞선다',/^BBB/,'BBB[BW]'],
+    [4,1,'머스킷 부대','총은 많지만 재정이 버티지 못한다'],
+    [5,0,'성형 요새','지킬 뿐 뻗어 나가지 못한다'],
+    [0,5,'자유 무역항','부유하지만 군대가 없다'],
+    [1,4,'종교개혁','말씀이 연달아 퍼져 가장 강한 제국을 흔든다',/^WWW/,'WWW[WB]'],
+    [2,3,'세계 일주','바다를 번갈아 건너 세계를 한 바퀴 돌아 바다의 두 강자를 앞선다',/^WBWBW$/,'WBWBW',2],
+    [3,2,'지동설','하늘과 땅이 번갈아 돈다는 것을 밝혀 두 강국의 세계관을 뒤집는다',/^BWBWB$/,'BWBWB',2],
+    [1,4,'플랜테이션','번영을 남에게 빼앗긴다'],
   ],
   6: [
-    [4,2,'개혁 군주','혁명이 터지기 전에 스스로 개혁한다'],
-    [5,1,'계엄 정권','힘으로 버티지만 민심이 곧 폭발한다'],
-    [6,0,'공포 정치','공포로만 다스린다'],
-    [3,3,'대혁명','권력을 쌓은 나라에 자유가 연달아 터져 뒤집힌다',/WW$/,'[BBBW]WW'],
-    [3,3,'과도 정부','둘로 갈려 결단을 내리지 못한다'],
-    [0,6,'해방구','자유롭지만 지킬 군대가 없다'],
-    [2,4,'왕의 처형','의회가 막판에 권력을 쥐고 왕을 처형한다',/B$/,'[BWWWW]B'],
-    [4,2,'반혁명','혁명 세력을 먼저 쓸어 내고 왕정이 돌아온다',/^WWBBBB$/,'WWBBBB'],
-    [5,1,'황제 즉위','혁명의 자식이 황제가 되어 모든 왕관을 꺾는다',/^WBBBBB$/,'WBBBBB',3],
-    [2,4,'무력한 의회','이상은 크지만 집행할 힘이 없다'],
-    [1,5,'폭도 정권','아무도 통제하지 못한다'],
+    [4,2,'증기기관','기계의 힘에 개혁을 더해 공장과 노동자를 함께 붙잡았다'],
+    [5,1,'철갑선','강철로 무장했지만 민심이 곧 폭발한다'],
+    [6,0,'기관총','쏘기만 하고 다스리지 못한다'],
+    [3,3,'인권 선언','권력이 쌓인 끝에 자유가 연달아 터져 공장의 질서를 뒤집는다',/WW$/,'[BBBW]WW'],
+    [3,3,'노동조합','자본과 노동이 둘로 갈려 결단을 내리지 못한다'],
+    [0,6,'백과사전','지식은 넘치지만 지킬 군대가 없다'],
+    [2,4,'여성 참정권','목소리를 연달아 높인 끝에 마지막으로 힘을 얻는다',/B$/,'[BWWWW]B'],
+    [4,2,'대륙 횡단 철도','레일을 먼저 깔고 기관차가 연달아 달려 증기기관의 힘을 대륙 끝까지 퍼뜨린다',/^WWBBBB$/,'WWBBBB'],
+    [5,1,'에펠탑','하나의 설계에 강철을 쏟아부어 산업 시대의 강자 셋을 내려다본다',/^WBBBBB$/,'WBBBBB',3],
+    [2,4,'신문','목소리는 크지만 집행할 힘이 없다'],
+    [1,5,'러다이트','기계를 부수지만 아무것도 세우지 못한다'],
   ],
   7: [
-    [0,7,'절대자유','모든 시민이 완전히 자유로운 문명의 정점'],
-    [7,0,'절대권력','하나의 의지로 움직이는 문명의 정점'],
-    [3,4,'초지능사회','자유로운 지식을 질서 있게 조직했다'],
-    [2,5,'지식사회','지식은 풍부하지만 조직력이 덜하다'],
-    [1,6,'미완의 자유','절대자유에 돌 하나가 모자란다'],
-    [4,3,'문명의 순환','역사가 돌고 돌아 처음으로 돌아오면 어떤 정점도 무너진다',/^(B.*B|W.*W)$/,'[BBBBWWW]|처음과 끝이 같은 색',3],
-    [4,3,'낡은 질서','안정적이지만 시대에 뒤처졌다'],
-    [2,5,'특이점','기계 지능이 두 정점을 앞지른다',/^BBWWWWW$/,'BBWWWWW',2],
-    [5,2,'디스토피아','자유를 내건 통제가 정점을 삼킨다',/^WBBBBBW$/,'WBBBBBW',2],
-    [5,2,'감시사회','통제가 창의를 죽였다'],
-    [6,1,'혼돈','절대권력이 무너지고 혼란만 남았다'],
+    [0,7,'인터넷','모든 지식이 모두에게 열린 문명의 정점'],
+    [7,0,'핵무기','하나의 힘으로 모든 것을 멈출 수 있는 문명의 정점'],
+    [3,4,'인공지능','자유로운 지식을 질서 있게 조직했다'],
+    [2,5,'실리콘밸리','아이디어는 넘치지만 제각각 흩어져 있다'],
+    [1,6,'가짜 뉴스','인터넷에 돌 하나가 모자라 거짓이 퍼진다'],
+    [4,3,'냉전','둘로 갈라져 버티지만 앞으로 나아가지 못한다'],
+    [2,5,'아폴로 계획','로켓의 힘에 과학을 연달아 실어 지구의 두 정점을 내려다본다',/^BBWWWWW$/,'BBWWWWW',2],
+    [5,2,'허블 망원경','양 끝의 렌즈 사이에 거대한 장치를 세워 두 정점보다 멀리 본다',/^WBBBBBW$/,'WBBBBBW',2],
+    [5,2,'감시 국가','통제가 창의를 죽였다'],
+    [4,3,'스톤헨지','처음과 끝이 맞물린 돌의 원 앞에서는 어떤 정점도 시간에 무너진다',/^(B.*B|W.*W)$/,'[BBBBWWW]|처음과 끝이 같은 색',3],
+    [6,1,'핵겨울','핵무기에 돌 하나가 모자라 모두가 얼어붙었다'],
   ],
 };
 const ERAS = {
-  1: ['태초의 시대','무리를 이루고 첫 돌을 놓는 시대. 전투 없이 문명을 세운다.'],
-  2: ['결속의 시대','혼자서는 버틸 수 없어 힘과 자유를 합친 쪽이 앞서는 시대.'],
-  3: ['정치의 시대','힘 있는 왕도 백성의 지지가 있어야 오래가는 시대.'],
-  4: ['국가의 시대','강한 중앙 권력이 나라를 하나로 묶는 시대.'],
-  5: ['제국의 시대','군사력과 번영을 함께 갖춘 나라가 세계를 지배하는 시대.'],
-  6: ['혁명의 시대','개혁으로 민심을 붙잡은 권력만 살아남는 시대.'],
-  7: ['문명의 시대','끝까지 한 길만 걸은 자가 문명의 정점에 서는 시대.'],
+  1: ['석기 시대','돌을 깎아 무기를 든 무리가 먼저 일어선 시대.'],
+  2: ['청동기 시대','힘과 지혜를 합친 무리가 먼저 땅에 정착한 시대.'],
+  3: ['철기 시대','철의 힘에 다스리는 지혜가 더해져야 오래가는 시대.'],
+  4: ['중세','성과 기사, 강한 군사력이 땅을 지배한 시대.'],
+  5: ['대항해 시대','함대의 힘과 무역의 부를 함께 가진 나라가 바다를 지배한 시대.'],
+  6: ['산업 시대','기계의 힘에 개혁을 더한 나라가 앞서는 시대.'],
+  7: ['정보 시대','한 길을 끝까지 판 문명이 정점에 서는 시대.'],
 };
-const POINTS = [0, 0, 1, 1, 2, 2, 2, 3];
+const POINTS = [0, 1, 1, 1, 2, 2, 2, 3];
 const TOKENS = { B:['B','B'], W:['W','W'], GB:['G','B'], GW:['G','W'] }; // 토큰: [돌 종류, 실제 색]
 const TOKEN_KEYS = Object.keys(TOKENS);
 const SPECIALS = Object.values(TABLES).flat().filter(row => row[4]).map(row => row[2]);
@@ -98,17 +99,17 @@ const legalFighters = (s, p) => [0,1,2].filter(i => s.players[p].civs[i].bannedT
 const plainIndex = (t, black) => TABLES[t].findIndex(row => !row[4] && row[0] === black);
 const canPlace = (stock, assign) => Array.isArray(assign) && assign.length === 3 && assign.every(k => TOKEN_KEYS.includes(k))
   && TOKEN_KEYS.every(k => assign.filter(x => x === k).length <= stock[k]);
-// 전투에서 이미 드러난 특수 족보 카드.
+// 전투에서 이미 드러난 불가사의 카드.
 const shownCards = (s, p) => s.players[p].cards.filter(c => s.history.some(h => h.hands[p].name === c));
 
-// cards: 이 문명 주인이 가진 특수 족보 카드 이름들.
+// cards: 이 문명 주인이 가진 불가사의 카드 이름들.
 function evaluate(t, seq, cards = []) {
   const black = countBlack(seq), specialIndex = TABLES[t].findIndex(row => row[0] === black && row[4]?.test(seq) && cards.includes(row[2]));
   const special = specialIndex >= 0, i = special ? specialIndex : plainIndex(t, black), row = TABLES[t][i];
   return { black, white: seq.length - black, rank: i + 1, name: row[2], why: row[3], special, beats: special ? row[6] ?? 1 : 0 };
 }
 
-// 0: a 승, 1: b 승, null: 무승부. 특수 족보는 정해진 상위 족보를 이기고, 나머지는 순위대로.
+// 0: a 승, 1: b 승, null: 무승부. 불가사의는 정해진 상위 족보를 이기고, 나머지는 순위대로.
 function versus(ea, eb) {
   if (eb.rank <= ea.beats) return 0;
   if (ea.rank <= eb.beats) return 1;
@@ -134,7 +135,7 @@ function newGame(rng = Math.random) {
   return { turn:1, stage:'assign', over:false, players:[player(0), player(1)], history:[] };
 }
 
-// 1단계: 양쪽 돌 배치. assigns[p] = [문명 A, B, C가 받을 토큰]. 점수가 없는 턴(1턴)은 전투 없이 다음 턴으로 간다.
+// 1단계: 양쪽 돌 배치. assigns[p] = [문명 A, B, C가 받을 토큰].
 function placeStones(prev, assigns) {
   const s = structuredClone(prev);
   assigns.forEach((assign, p) => {
@@ -146,8 +147,7 @@ function placeStones(prev, assigns) {
       pl.civs[i].stones.push({ kind, color, revealed:kind !== 'G' });
     });
   });
-  if (pointsFor(s.turn) === 0) s.turn++;
-  else s.stage = 'fight';
+  s.stage = 'fight';
   return s;
 }
 
@@ -180,7 +180,7 @@ function winnerOf(s) {
 const OPTIONS = TOKEN_KEYS.flatMap(a => TOKEN_KEYS.flatMap(b => TOKEN_KEYS.map(c => [a, b, c])));
 
 // 봇이 족보의 쓸모를 잴 때 쓰는 값: 그 턴 일반 족보를 상대로 이기는 비율(비기면 절반).
-// 내 카드의 특수 족보는 상대 정점을 잡으려고 노리므로 어떤 일반 족보보다 높게 친다.
+// 내 카드의 불가사의는 상대 정점을 잡으려고 노리므로 어떤 일반 족보보다 높게 친다.
 function handValue(t, seq, cards) {
   const e = evaluate(t, seq, cards), plain = TABLES[t].map((row, i) => ({ row, rank:i + 1, beats:0 })).filter(x => !x.row[4]);
   const v = plain.reduce((sum, x) => { const r = versus(e, x); return sum + (r === 0 ? 1 : r === null ? 0.5 : 0); }, 0) / plain.length;
@@ -240,7 +240,7 @@ function botAssign(s, p, rng = Math.random) {
     const seqs = me.civs.map((civ, i) => colorsOf(civ) + TOKENS[assign[i]][1]), left = { ...me.stock };
     assign.forEach(k => { left[k]--; });
     const maxB = left.B + left.GB, maxW = left.W + left.GW;
-    let score = pointsFor(t) ? maximin(edgeMatrix(t, legalFighters(s, p).map(i => seqs[i]), me.cards, theirs, guess)).v * pointsFor(t) : 0;
+    let score = maximin(edgeMatrix(t, legalFighters(s, p).map(i => seqs[i]), me.cards, theirs, guess)).v * pointsFor(t);
     for (let u = t + 1; u <= LAST_TURN; u++) seqs.forEach((seq, i) => {
       if (me.civs[i].bannedThrough < u) score += 0.2 * pointsFor(u) * reachValue(u, seq, me.cards, maxB, maxW);
     });
@@ -300,7 +300,7 @@ function selfCheck() {
     eq(new Set(plainRows.map(row => row[0])).size, t + 1, `${t}턴 조합 수`);
     eq(plainRows.length, t + 1, `${t}턴 일반 족보 수`);
     rows.forEach(row => eq(row[0] + row[1], t, `${t}턴 ${row[2]} 돌 개수`));
-    eq(specials.length > 0, t >= 3, `${t}턴 특수 족보 유무`);
+    eq(specials.length > 0, t >= 3, `${t}턴 불가사의 유무`);
     for (const row of specials) {
       const name = row[2], beats = row[6] ?? 1, matches = fills('?'.repeat(t)).filter(seq => evaluate(t, seq, [name]).name === name);
       eq(matches.length > 0, true, `${name}을 만들 수 있음`);
@@ -315,39 +315,41 @@ function selfCheck() {
   }
   for (const [b, w] of TABLES[7].filter(row => !row[4])) if (w > b) eq(plainIndex(7, b) < plainIndex(7, w), true, '7턴 백 우세');
   for (const t of [5, 6]) eq(plainIndex(t, 0) === TABLES[t].length - 1, false, `${t}턴 백 몰빵은 꼴찌가 아님`);
-  eq(SPECIALS.length, 16, '특수 족보 16장');
+  eq(SPECIALS.length, 16, '불가사의 16장');
   eq(compareHands(1, 'B', 'W'), 0, '1턴 흑 승');
   eq(compareHands(1, 'B', 'B'), null, '같은 족보 무승부');
-  eq(compareHands(3, 'BWW', 'WWB', ['시민 봉기']), 0, '카드가 있으면 특수 족보가 같은 조합을 이김');
+  eq(compareHands(3, 'BWW', 'WWB', ['대도서관']), 0, '카드가 있으면 불가사의가 같은 조합을 이김');
   eq(compareHands(3, 'BWW', 'WWB'), null, '카드가 없으면 같은 일반 족보');
-  eq(compareHands(3, 'WBB', 'BBW', ['궁정 쿠데타']), 0, '궁정 쿠데타가 왕국을 잡음');
-  eq(compareHands(3, 'WBB', 'WWB', ['궁정 쿠데타']), 1, '궁정 쿠데타는 도시국가에 짐');
+  eq(compareHands(3, 'WBB', 'BBW', ['트로이 목마']), 0, '트로이 목마가 법전을 잡음');
+  eq(compareHands(3, 'WBB', 'WWB', ['트로이 목마']), 1, '트로이 목마는 화폐에 짐');
   eq(compareHands(7, 'WWWWWWW', 'BBBBBBB'), 0, '7턴 백 7이 최강');
-  eq(compareHands(7, 'BWWBWBB', 'BBBWWWW', ['문명의 순환']), 0, '문명의 순환이 초지능사회를 이김');
-  eq(compareHands(7, 'BBWWWWW', 'BWWBWBB', [], ['문명의 순환']), 0, '지식사회가 문명의 순환을 이김');
-  eq(evaluate(7, 'BBBWWBW', ['문명의 순환']).name, '낡은 질서', '처음과 끝이 다르면 일반 족보');
-  eq(evaluate(5, 'WWWBW', ['독립 전쟁']).name, '독립 전쟁', '독립 전쟁은 뒤 두 돌 순서 무관');
-  eq(evaluate(5, 'WWBWW', ['독립 전쟁']).name, '식민지', '흑이 앞쪽이면 식민지');
-  eq(possibleHands(3, 'B?', ['시민 봉기']).specials[0], '시민 봉기', '가능한 특수 족보 표시');
-  // 0번은 시민 봉기와 궁정 쿠데타 카드, 회색돌은 모두 속이 흑.
+  eq(compareHands(7, 'BWWBWBB', 'BBBWWWW', ['스톤헨지']), 0, '스톤헨지이 인공지능을 이김');
+  eq(compareHands(7, 'BBWWWWW', 'BWWBWBB', [], ['스톤헨지']), 0, '실리콘밸리가 스톤헨지을 이김');
+  eq(compareHands(7, 'BBBBWWW', 'BWWBWBB', [], ['스톤헨지']), 0, '냉전도 스톤헨지을 이김');
+  eq(evaluate(7, 'BBBWWBW', ['스톤헨지']).name, '냉전', '처음과 끝이 다르면 일반 족보');
+  eq(evaluate(5, 'WWWBW', ['종교개혁']).name, '종교개혁', '종교개혁은 뒤 두 돌 순서 무관');
+  eq(evaluate(5, 'WWBWW', ['종교개혁']).name, '플랜테이션', '흑이 앞쪽이면 플랜테이션');
+  eq(possibleHands(3, 'B?', ['대도서관']).specials[0], '대도서관', '가능한 불가사의 표시');
+  // 0번은 대도서관와 트로이 목마 카드, 회색돌은 모두 속이 흑.
   const g = newGame(() => 0);
-  eq(g.players[0].cards.join(), '시민 봉기,궁정 쿠데타', '카드 나눠 주기');
+  eq(g.players[0].cards.join(), '대도서관,트로이 목마', '카드 나눠 주기');
   eq((() => { try { placeStones(g, [['GW','B','W'], ['B','W','GB']]); return false; } catch { return true; } })(), true, '없는 돌은 못 놓음');
   let s = placeStones(g, [['B','W','GB'], ['B','B','B']]);
-  eq(s.turn === 2 && s.stage === 'assign' && s.players[0].stock.GB === 6 && s.players[1].stock.B === 4, true, '1턴은 전투 없이 2턴으로, 남은 돌 줄어듦');
+  eq(s.stage === 'fight' && s.players[0].stock.GB === 6 && s.players[1].stock.B === 4, true, '1턴도 전투, 남은 돌 줄어듦');
   const masked = maskFor(s, 0);
   eq(masked.players[0].civs[2].stones[0].color, '?', '상대 회색돌 색 가림');
   eq(masked.players[0].stock.G === 6 && masked.players[0].stock.GB === undefined, true, '상대 남은 회색돌 속 색 가림');
   eq(masked.players[0].cards.join(), '?,?', '상대 카드 가림');
-  eq(masked.players[1].cards.join(), '헌법 제정,망명 정부', '내 카드 유지');
+  eq(masked.players[1].cards.join(), '마그나 카르타,인쇄기', '내 카드 유지');
   eq(isValidView(masked), true, '가린 상태는 유효');
   eq(isValidView({ ...masked, turn:'<b>' }), false, '잘못된 상태 거부');
   eq(isValidView({ ...masked, players:[{ ...masked.players[0], cards:['<img>', '?'] }, masked.players[1]] }), false, '없는 카드 이름 거부');
-  s = fightTurn(placeStones(s, [['W','W','B'], ['W','W','W']]), [1, 2]);
-  eq(s.history[0].winner === 1 && s.players[1].civs[2].bannedThrough === 4 && s.players[0].civs[1].bannedThrough === 3, true, '이긴 문명은 2턴, 진 문명은 1턴 쉼');
-  s = fightTurn(placeStones(s, [['W','B','B'], ['B','B','B']]), [0, 0]);
-  eq(s.history[1].hands[0].name === '시민 봉기' && s.history[1].winner === 0, true, '시민 봉기 카드로 왕국을 이김');
-  eq(maskFor(s, 0).players[0].cards.join(), '시민 봉기,?', '쓴 카드는 공개');
+  s = fightTurn(s, [1, 0]);
+  eq(s.history[0].winner === 1 && s.players[1].civs[0].bannedThrough === 3 && s.players[0].civs[1].bannedThrough === 2, true, '이긴 문명은 2턴, 진 문명은 1턴 쉼');
+  s = fightTurn(placeStones(s, [['W','W','B'], ['W','W','W']]), [2, 1]);
+  s = fightTurn(placeStones(s, [['W','B','B'], ['B','B','B']]), [0, 2]);
+  eq(s.history[2].hands[0].name === '대도서관' && s.history[2].winner === 0, true, '대도서관 카드로 법전을 이김');
+  eq(maskFor(s, 0).players[0].cards.join(), '대도서관,?', '쓴 카드는 공개');
   eq(winnerOf({ players:[{ score:3 }, { score:3 }], history:[{ winner:1 }, { winner:0 }, { winner:null }] }), 0, '동점이면 마지막 전투 승자');
 }
 selfCheck();
