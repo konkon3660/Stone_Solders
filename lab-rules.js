@@ -83,7 +83,7 @@ const CARDS = {
   '개종':{ stage:'prep', order:2, n:2, until:6, text:'내 문명 하나의 돌 하나의 색을 바꾼다. 7턴 불가.',
     uses:(s, p) => stonesWhere(s, p, () => true), run:(s, p, u) => flipStone(s, p, u) },
   '봉쇄':{ stage:'prep', order:1, n:1, until:6, text:'상대 문명 하나가 이번 턴 흑돌 또는 백돌을 받지 못한다. 회색돌은 받는다. 7턴 불가.',
-    uses:(s, p) => ['B','W'].filter(block => s.mods.rush || TOKEN_KEYS.some(k => k !== block && s.players[1 - p].stock[k] > 0)).flatMap(block => allCivs().map(x => ({ ...x, block }))),
+    uses:(s, p) => ['B','W'].flatMap(block => allCivs().map(x => ({ ...x, block }))).filter(u => canBlock(s, 1 - p, u)),
     run:(s, p, u) => { s.fx.blocked[1 - p] = { civ:u.civ, token:u.block }; } },
   '선동':{ stage:'prep', order:2, n:1, until:5, text:'상대 문명 하나의 공개된 돌 하나의 색을 바꾼다. 6·7턴 불가.',
     uses:(s, p) => stonesWhere(s, 1 - p, st => st.revealed), run:(s, p, u) => flipStone(s, 1 - p, u) },
@@ -225,6 +225,13 @@ const isFinal = s => s.mods.final && !s.mods.fronts && s.turn === LAST_TURN;
 // 고를 수 있는 것: 보통은 문명 번호, 최종 결전이면 PERMS 번호.
 const fightable = (s, p) => isFinal(s) ? [0,1,2,3,4,5] : [0,1,2].filter(i => s.players[p].civs[i].bannedThrough < s.turn && s.players[p].civs[i].stones.length);
 
+// 봉쇄해도 q가 돌 세 개를 다 둘 수 있어야 한다. 막힌 색 돌은 나머지 문명 자리에만 들어간다.
+function canBlock(s, q, u) {
+  const pl = s.players[q], free = TOKEN_KEYS.reduce((n, k) => n + (k === u.block ? 0 : pl.stock[k]), 0);
+  const room = s.mods.rush ? [0,1,2].reduce((n, c) => n + (c === u.civ ? 0 : LAST_TURN - pl.civs[c].stones.length), 0) : 2;
+  return Math.max(0, 3 - free) <= room;
+}
+
 // 한 수는 [문명 번호, 토큰] 세 개.
 function canMove(s, p, mv) {
   if (!Array.isArray(mv) || mv.length !== 3) return false;
@@ -331,15 +338,20 @@ const BOT = { cands:48, K:6 };
 const pickOf = (a, rng) => a[Math.floor(rng() * a.length)];
 
 function randomMove(s, p, rng) {
-  const left = { ...s.players[p].stock }, room = s.players[p].civs.map(c => LAST_TURN - c.stones.length), block = s.fx.blocked[p];
-  const ok = (c, k) => left[k] > 0 && !(block && block.civ === c && block.token === k);
-  // 봉쇄당한 문명이 먼저 골라야 돌이 모자라 막히지 않는다.
-  return (block ? [block.civ, ...[0,1,2].filter(i => i !== block.civ)] : [0,1,2]).map(n => {
-    const c = s.mods.rush ? pickOf([0,1,2].filter(i => room[i] > 0 && TOKEN_KEYS.some(k => ok(i, k))), rng) : n;
-    const k = pickOf(TOKEN_KEYS.filter(x => ok(c, x)), rng);
-    left[k]--; room[c]--;
-    return [c, k];
-  });
+  // 러시에서 봉쇄당하면 앞 돌이 자리를 다 써서 막힐 수 있다. canBlock이 답이 있음을 보장하니 다시 뽑는다.
+  for (let tries = 0; tries < 9999; tries++) {
+    const left = { ...s.players[p].stock }, room = s.players[p].civs.map(c => LAST_TURN - c.stones.length), block = s.fx.blocked[p];
+    const ok = (c, k) => left[k] > 0 && !(block && block.civ === c && block.token === k);
+    // 봉쇄당한 문명이 먼저 골라야 돌이 모자라 막히지 않는다.
+    const mv = (block ? [block.civ, ...[0,1,2].filter(i => i !== block.civ)] : [0,1,2]).map(n => {
+      const c = s.mods.rush ? pickOf([0,1,2].filter(i => room[i] > 0 && TOKEN_KEYS.some(k => ok(i, k))), rng) : n;
+      const k = pickOf(TOKEN_KEYS.filter(x => ok(c, x)), rng);
+      left[k]--; room[c]--;
+      return [c, k];
+    });
+    if (canMove(s, p, mv) && mv.every(m => m[0] !== undefined)) return mv;
+  }
+  throw new Error('둘 수 있는 돌이 없음');
 }
 
 // 돌을 놓은 뒤 세 문명 순위의 합. 수를 고르는 대충의 기준.
@@ -496,6 +508,14 @@ function labSelfCheck() {
   tr.players[1].offer = ['선동', '신탁'];
   tr = labPrep(tr, [{ keep:'개종', use:{ card:'개종', civ:0, i:0 } }, { keep:'선동', use:{ card:'선동', civ:0, i:0 } }]);
   eq(tr.players[0].civs[0].stones[0].color, 'B', '같은 돌을 바꾸면 둘 다 무효');
+  // 러시 후반 봉쇄: 막힌 돌이 들어갈 자리가 없으면 못 쓰고, 자리가 있으면 무작위 배치가 답을 찾는다.
+  const tight = labNewGame({ ...off, rush:true, augment:true, cards:2 }, rng), foe = tight.players[1];
+  [7, 6, 2].forEach((n, c) => { foe.civs[c].stones = Array.from({ length:n }, () => stoneOf('B')); });
+  foe.stock = { ...foe.stock, B:1, W:2, GB:0, GW:0 };
+  eq(canBlock(tight, 1, { civ:2, block:'W' }), false, '막힌 돌 둘 자리가 없으면 봉쇄 불가');
+  eq(canBlock(tight, 1, { civ:2, block:'B' }), true, '자리가 있으면 봉쇄 가능');
+  tight.fx.blocked[1] = { civ:2, token:'B' };
+  for (let i = 0; i < 200; i++) eq(canMove(tight, 1, randomMove(tight, 1, rng)), true, '봉쇄돼도 무작위 배치는 합법');
   for (const on of [...MODS.map(m => [m.id]), MODS.map(m => m.id)]) {
     let g = labNewGame({ ...off, ...Object.fromEntries(on.map(id => [id, true])), cards:2 }, rng);
     while (!g.over) {
