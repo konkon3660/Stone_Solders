@@ -20,6 +20,16 @@
 .queue { display: inline-flex; gap: 4px; }
 .fx { padding-left: 1.1em; margin: 8px 0 0; font-size: .92rem; }
 .lane { font-family: var(--display); margin-top: 14px; }
+.picks.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.pick.offer { display: block; text-align: left; height: auto; padding: 8px 10px; }
+.pick.offer[aria-pressed="true"] { padding: 7px 9px; }
+.pick.offer .labels > * { display: block; white-space: normal; margin-top: 3px; }
+.perms { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 8px; margin-top: 4px; }
+.draw-row { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+.draw-row .dot { width: 22px; height: 22px; animation: draw-pop .22s both ease-out; }
+.tag.jackpot { color: var(--gold); font-weight: 700; }
+@keyframes draw-pop { from { opacity: 0; transform: scale(.3); } }
+@media (prefers-reduced-motion: reduce) { .draw-row .dot { animation: none; } }
 @media (min-width: 720px) { .mods { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 </style>
 </head>

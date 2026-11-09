@@ -183,7 +183,7 @@ function tableHTML() {
 function historyHTML(open = false) {
   if (!s.history.length) return '';
   const lines = s.history.map(h => {
-    const result = h.winner === null ? '무승부' : `${nameOf(h.winner)} 승 +${pointsFor(h.turn)}`;
+    const result = h.winner === null ? '무승부' : `${nameOf(h.winner)} 승 +${h.gain}`;
     return `<li>${h.turn}턴: ${nameOf(0)} ${LETTERS[h.fighters[0]]} ${handLine(h.hands[0])} 대 ${nameOf(1)} ${LETTERS[h.fighters[1]]} ${handLine(h.hands[1])} · <b>${result}</b></li>`;
   }).join('');
   return `<details ${open ? 'open' : ''}><summary>전투 기록 (${s.history.length}턴)</summary><ol class="history">${lines}</ol></details>`;
@@ -191,7 +191,7 @@ function historyHTML(open = false) {
 
 // 전투 결과의 이유: 순위 차이인지, ★ 불가사의가 상위 족보를 잡았는지.
 function reasonText(h) {
-  if (h.winner === null) return `같은 족보(${h.hands[0].name})라 무승부`;
+  if (h.winner === null) return `같은 족보(${h.hands[0].name})라 무승부${s.over ? '' : ` · 다음 승부에 ${s.pot}점 얹힘`}`;
   const w = h.hands[h.winner], l = h.hands[1 - h.winner];
   if (w.special && l.rank <= w.beats) return `★ ${w.name}${iga(w.name)} 상위 족보 ${l.name}${eul(l.name)} 잡음`;
   return `${w.rank}위${iga(`${w.rank}위`)} ${l.rank}위${eul(`${l.rank}위`)} 이김`;
@@ -211,7 +211,7 @@ function hud(now) {
 }
 
 function eraBanner(t) {
-  return `<section class="era">${artImg(ERA_ART[t])}<div class="era-text"><h1>${t}/${LAST_TURN}턴 · ${ERAS[t][0]}</h1><p>${ERAS[t][1]} <span class="nowrap">승리 시 ${pointsFor(t)}점.</span></p><cite>${artCredit(ERA_ART[t])}</cite></div></section>`;
+  return `<section class="era">${artImg(ERA_ART[t])}<div class="era-text"><h1>${t}/${LAST_TURN}턴 · ${ERAS[t][0]}</h1><p>${ERAS[t][1]} <span class="nowrap">승리 시 ${pointsFor(t) + s.pot}점${s.pot ? ` (이월 ${s.pot}점 포함)` : ''}.</span></p><cite>${artCredit(ERA_ART[t])}</cite></div></section>`;
 }
 
 const steps = now => `<ol class="steps">${['돌 배치', '문명 출전', '전투'].map((label, i) => `<li class="${i === now ? 'now' : ''}" ${i === now ? 'aria-current="step"' : ''}>${i + 1}. ${label}</li>`).join('')}</ol>`;
@@ -225,6 +225,7 @@ const screens = {
       <cite>${artCredit(ERA_ART[5])}</cite>
     </div></section>
     <div class="modes">
+      <a class="primary" href="tutorial.html">튜토리얼</a>
       <button class="primary" data-act="start" data-mode="bot">봇과 대전</button>
       <button class="primary" data-act="start" data-mode="hotseat">둘이서 번갈아 하기</button>
       <button class="primary" data-act="host">온라인 방 만들기</button>
@@ -243,7 +244,7 @@ const screens = {
         <li>양쪽 배치가 동시에 공개됩니다. 상대 회색돌은 "?"로 보입니다. 배치를 보고 출전할 문명 하나를 비공개로 고릅니다. 출전한 문명의 회색돌은 그때 공개됩니다.</li>
         <li>족보표에서 위에 있을수록 강하고, 같은 족보끼리는 무승부입니다. ★ 불가사의는 적힌 상위 족보를 이기고 나머지와는 순위대로 겨룹니다. 전투에 쓴 카드는 공개됩니다.</li>
         <li>이긴 문명은 다음 2턴, 지거나 비긴 문명은 다음 1턴 출전할 수 없습니다.</li>
-        <li>승리 점수는 1~3턴 1점, 4~6턴 2점, 7턴 3점입니다. 동점이면 마지막 전투 승자가 이깁니다.</li>
+        <li>승리 점수는 1~3턴 1점, 4~6턴 2점, 7턴 3점입니다. 비기면 그 점수가 다음 승부에 얹힙니다. 동점이면 마지막 전투 승자가 이깁니다.</li>
       </ol>
     </details>
     <details class="panel"><summary>그림 출처</summary>
@@ -313,7 +314,7 @@ const screens = {
   result: () => {
     const h = s.history.at(-1), view = mode === 'hotseat' ? null : viewer;
     const tone = h.winner === null || mode === 'hotseat' ? '' : h.winner === viewer ? 'win' : 'lose';
-    const headline = h.winner === null ? '무승부' : `${nameOf(h.winner)} 승리 +${pointsFor(h.turn)}점`;
+    const headline = h.winner === null ? '무승부' : `${nameOf(h.winner)} 승리 +${h.gain}점`;
     const duel = p => { const e = h.hands[p], art = HAND_ART[e.name]; return `<article class="card duel-card ${h.winner === p ? 'winner' : ''}">
       ${artImg(art, 'hand-art')}
       <div class="card-head"><strong>${nameOf(p)} · 문명 ${LETTERS[h.fighters[p]]}</strong><span class="tag">${h.winner === p ? '승리' : h.winner === null ? '무승부' : '패배'}</span></div>

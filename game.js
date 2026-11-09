@@ -132,7 +132,7 @@ function newGame(rng = Math.random) {
     const GB = Array.from({ length:STOCK }, () => rng()).filter(x => x < 0.5).length;
     return { score:0, stock:{ B:STOCK, W:STOCK, GB, GW:STOCK - GB }, cards:deck.slice(p * HAND_CARDS, (p + 1) * HAND_CARDS), civs:[0,1,2].map(() => ({ stones:[], bannedThrough:0 })) };
   };
-  return { turn:1, stage:'assign', over:false, players:[player(0), player(1)], history:[] };
+  return { turn:1, stage:'assign', over:false, pot:0, players:[player(0), player(1)], history:[] };
 }
 
 // 1단계: 양쪽 돌 배치. assigns[p] = [문명 A, B, C가 받을 토큰].
@@ -151,7 +151,7 @@ function placeStones(prev, assigns) {
   return s;
 }
 
-// 2단계: 배치를 본 뒤 출전과 전투. fighters[p] = 문명 번호. 이긴 문명은 2턴, 지거나 비긴 문명은 1턴 쉰다.
+// 2단계: 배치를 본 뒤 출전과 전투. fighters[p] = 문명 번호. 이긴 문명은 2턴, 지거나 비긴 문명은 1턴 쉰다. 비기면 점수가 다음 승부에 얹힌다.
 function fightTurn(prev, fighters) {
   const s = structuredClone(prev), t = s.turn;
   fighters.forEach((fighter, p) => {
@@ -161,9 +161,10 @@ function fightTurn(prev, fighters) {
   const seqs = fighters.map((fighter, p) => colorsOf(s.players[p].civs[fighter]));
   const hands = seqs.map((q, p) => evaluate(t, q, s.players[p].cards));
   const winner = versus(hands[0], hands[1]);
-  if (winner !== null) s.players[winner].score += pointsFor(t);
+  const gain = winner === null ? 0 : pointsFor(t) + s.pot;
+  if (winner !== null) { s.players[winner].score += gain; s.pot = 0; } else s.pot += pointsFor(t);
   fighters.forEach((fighter, p) => { s.players[p].civs[fighter].bannedThrough = t + (p === winner ? 2 : 1); });
-  s.history.push({ turn:t, fighters:[...fighters], seqs, hands, winner });
+  s.history.push({ turn:t, fighters:[...fighters], seqs, hands, winner, gain });
   s.turn++;
   s.stage = 'assign';
   s.over = s.turn > LAST_TURN;
@@ -240,7 +241,7 @@ function botAssign(s, p, rng = Math.random) {
     const seqs = me.civs.map((civ, i) => colorsOf(civ) + TOKENS[assign[i]][1]), left = { ...me.stock };
     assign.forEach(k => { left[k]--; });
     const maxB = left.B + left.GB, maxW = left.W + left.GW;
-    let score = maximin(edgeMatrix(t, legalFighters(s, p).map(i => seqs[i]), me.cards, theirs, guess)).v * pointsFor(t);
+    let score = maximin(edgeMatrix(t, legalFighters(s, p).map(i => seqs[i]), me.cards, theirs, guess)).v * (pointsFor(t) + s.pot);
     for (let u = t + 1; u <= LAST_TURN; u++) seqs.forEach((seq, i) => {
       if (me.civs[i].bannedThrough < u) score += 0.2 * pointsFor(u) * reachValue(u, seq, me.cards, maxB, maxW);
     });
@@ -257,7 +258,7 @@ function botFight(s, p, rng = Math.random) {
   const A = edgeMatrix(t, mine.map(i => colorsOf(me.civs[i])), me.cards, legalFighters(s, 1 - p).map(j => publicSeq(them.civs[j])), cardGuess(s, 1 - p))
     .map((row, k) => {
       const cost = t < LAST_TURN ? 0.2 * pointsFor(t + 1) * reachValue(t + 1, colorsOf(me.civs[mine[k]]), me.cards, maxB, maxW) : 0;
-      return row.map(x => x * pointsFor(t) - cost);
+      return row.map(x => x * (pointsFor(t) + s.pot) - cost);
     });
   const { p: mix } = maximin(A);
   let x = rng();
@@ -284,10 +285,10 @@ function isValidView(v) {
   const stockOk = st => count(st?.B) && count(st.W) && (count(st.G) || count(st.GB) && count(st.GW));
   const cardsOk = cs => Array.isArray(cs) && cs.length === HAND_CARDS && cs.every(c => c === '?' || SPECIALS.includes(c));
   const playerOk = p => int(p?.score) && stockOk(p.stock) && cardsOk(p.cards) && Array.isArray(p.civs) && p.civs.length === 3 && p.civs.every(civOk);
-  const fightOk = h => int(h?.turn) && h.turn >= 1 && h.turn <= LAST_TURN && [0, 1, null].includes(h.winner)
+  const fightOk = h => int(h?.turn) && h.turn >= 1 && h.turn <= LAST_TURN && [0, 1, null].includes(h.winner) && int(h.gain)
     && Array.isArray(h.fighters) && h.fighters.length === 2 && h.fighters.every(f => [0,1,2].includes(f))
     && Array.isArray(h.seqs) && h.seqs.length === 2 && h.seqs.every(q => typeof q === 'string' && q.length === h.turn && /^[BW]+$/.test(q));
-  return !!v && int(v.turn) && v.turn >= 1 && v.turn <= LAST_TURN + 1 && ['assign','fight'].includes(v.stage) && typeof v.over === 'boolean'
+  return !!v && int(v.pot) && int(v.turn) && v.turn >= 1 && v.turn <= LAST_TURN + 1 && ['assign','fight'].includes(v.stage) && typeof v.over === 'boolean'
     && Array.isArray(v.players) && v.players.length === 2 && v.players.every(playerOk)
     && Array.isArray(v.history) && v.history.every(fightOk);
 }
@@ -351,5 +352,9 @@ function selfCheck() {
   eq(s.history[2].hands[0].name === '대도서관' && s.history[2].winner === 0, true, '대도서관 카드로 법전을 이김');
   eq(maskFor(s, 0).players[0].cards.join(), '대도서관,?', '쓴 카드는 공개');
   eq(winnerOf({ players:[{ score:3 }, { score:3 }], history:[{ winner:1 }, { winner:0 }, { winner:null }] }), 0, '동점이면 마지막 전투 승자');
+  const tie = fightTurn(placeStones(g, [['B','B','B'], ['B','B','B']]), [0, 0]);
+  eq(tie.pot, 1, '비기면 1점 이월');
+  const paid = fightTurn(placeStones(tie, [['W','W','W'], ['B','B','B']]), [1, 1]);
+  eq(paid.players[0].score === 2 && paid.pot === 0 && paid.history[1].gain === 2, true, '다음 승자가 이월 점수까지 가져감');
 }
 selfCheck();
