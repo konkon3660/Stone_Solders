@@ -203,6 +203,7 @@ ol.history li { padding: 6px 0; border-top: 1px solid var(--line); }
 .hero h1 { font-size: 2.1rem; }
 .modes { display: grid; gap: 8px; margin-top: 14px; }
 .modes .primary { width: 100%; }
+.modes a { display: grid; place-items: center; padding: 10px 15px; border-radius: 8px; text-decoration: none; }
 .join { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .join button { flex: 1; }
 .rules { padding-left: 1.2em; margin: 8px 0 0; }
@@ -234,7 +235,7 @@ ol.history li { padding: 6px 0; border-top: 1px solid var(--line); }
   .hand-art { aspect-ratio: 16 / 10; }
   .hand-big { font-size: 1.25rem; }
   .sp-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .modes { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .modes { grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); }
   .hero { min-height: 320px; }
   .hero h1 { font-size: 3rem; }
   dialog { margin: auto; border-radius: 14px; }

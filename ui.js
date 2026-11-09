@@ -228,6 +228,7 @@ const screens = {
       <button class="primary" data-act="start" data-mode="bot">봇과 대전</button>
       <button class="primary" data-act="start" data-mode="hotseat">둘이서 번갈아 하기</button>
       <button class="primary" data-act="host">온라인 방 만들기</button>
+      <a class="primary" href="lab.html">실험실 게임</a>
     </div>
     <div class="panel join">
       <label for="join-code">받은 방 코드</label>

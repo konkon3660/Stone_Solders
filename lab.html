@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#14181b">
+<title>문명 대전 실험실</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@700&display=swap">
+<link rel="stylesheet" href="style.css">
+<style>
+.mods { display: grid; gap: 8px; margin-top: 12px; }
+.mod { text-align: left; }
+.mod b { display: block; }
+.mod small { color: var(--muted); font-size: .84rem; }
+.mod[aria-pressed="true"] { border: 2px solid var(--gold); background: #3a372c; padding: 8px 13px; }
+.panel .tab { flex: none; width: 56px; }
+.on-mods { font-size: .82rem; color: var(--gold); margin-top: 4px; }
+.queue { display: inline-flex; gap: 4px; }
+.fx { padding-left: 1.1em; margin: 8px 0 0; font-size: .92rem; }
+.lane { font-family: var(--display); margin-top: 14px; }
+@media (min-width: 720px) { .mods { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+</style>
+</head>
+<body>
+<div class="wrap" id="app"></div>
+<dialog id="table-sheet" aria-label="족보표"></dialog>
+<script src="game.js"></script>
+<script src="art.js"></script>
+<script src="lab-rules.js"></script>
+<script src="lab-ui.js"></script>
+</body>
+</html>
