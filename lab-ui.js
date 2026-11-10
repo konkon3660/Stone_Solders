@@ -147,6 +147,29 @@ function cardsHTML(view) {
     <p class="muted">${nameOf(1 - view)} 카드 ${s.mods.cards}장: ${shown.length ? `${shown.join(', ')} 공개` : '모두 비공개'}</p>`;
 }
 
+// 테크 트리 지도: 줄은 돌 개수, 열은 갈래. 갈래 머리에 흑·백을 놓으면 갈 갈래를 적는다. marks[갈래+돌 개수] = 그 칸에 있는 내 문명 글자.
+const FX_SHORT = { peek:'엿보기', break:'뒤집기', capture:'점령', score:'승점 +', lock:'출전 금지', rest:'안 쉼' };
+const fxShort = fx => !fx ? '' : fx[0] === 'score' ? `승점 +${fx[1]}` : fx[1] ? `${FX_SHORT[fx[0]]} ${fx[1]}` : FX_SHORT[fx[0]];
+function treeMarks(v, withPend) {
+  const marks = {};
+  if (v === null) return marks;
+  s.players[v].civs.forEach((civ, i) => {
+    const stones = [...civ.stones, ...(withPend ? pend.filter(m => m[0] === i).map(m => stoneOf(m[1])) : [])];
+    if (stones.length) (marks[treeHand(seqOfStones(s.mods, stones)).lane + stones.length] ??= []).push(LETTERS[i]);
+  });
+  return marks;
+}
+function treeMap(marks) {
+  const lanes = Object.keys(TREE);
+  const head = lanes.map(l => `<th scope="col">${TREE[l].name}<small>${dot('B')}${TREE[TREE[l].B].name}</small><small>${dot('W')}${TREE[TREE[l].W].name}</small></th>`).join('');
+  const rows = Object.keys(TABLES).map(d => `<tr><th scope="row">${d}</th>${lanes.map(l => {
+    const n = TREE[l].at[d], m = marks[l + d];
+    return !n ? '<td></td>' : `<td class="${m ? 'here' : ''}"${n[3] ? ` title="${n[3]}"` : ''}>${m ? `<em>${m.join(' ')}</em>` : ''}<b>${n[0]}</b><span>힘 ${n[1]}</span>${n[2] ? `<small>${fxShort(n[2])}</small>` : ''}</td>`;
+  }).join('')}</tr>`).join('');
+  return `<div class="tree-wrap"><table class="tree"><thead><tr><th scope="col">돌</th>${head}</tr></thead><tbody>${rows}</tbody></table></div>
+    <p class="legend">첫 돌이 흑이면 군대, 백이면 학문에서 시작합니다. 그다음은 지금 갈래 머리에 적힌 대로 흑이나 백을 놓은 갈래의 한 칸 아래로 갑니다. 금색 칸의 글자가 내 문명 위치입니다. 힘이 센 쪽이 이기고, 같으면 무승부입니다.</p>`;
+}
+
 function tableHTML() {
   if (s.mods.shape) return `<div class="hand-head"><h2>모양 족보</h2></div>
     <ol class="hand-list">${SHAPES.map(([name, why, ex], i) => `<li class="hand-row"><div class="hand-body">
@@ -154,18 +177,8 @@ function tableHTML() {
     </div></li>`).join('')}</ol>
     <p class="legend">돌을 받은 순서까지 봅니다. 위가 강하고 같은 족보끼리는 무승부. 일곱 턴 내내 같은 표입니다.</p>`;
   const t = tableTurn, me = secretOwner(), mine = me === null ? [] : s.players[me].cards;
+  if (s.mods.tree) return `<div class="hand-head"><h2>테크 트리</h2></div>${treeMap(treeMarks(me, phase === 'assign'))}`;
   const tabs = `<div class="tabs">${Object.keys(TABLES).map(u => `<button class="tab" data-act="tableTab" data-t="${u}" aria-pressed="${Number(u) === t}" aria-label="돌 ${u}개 족보">${u}</button>`).join('')}</div>`;
-  if (s.mods.tree) {
-    const node = lane => TREE[lane].at[t], next = (lane, c) => TREE[TREE[lane][c]].at[t + 1][0];
-    const lanes = Object.keys(TREE).filter(node).sort((a, b) => node(b)[1] - node(a)[1]);
-    return `${tabs}<div class="hand-head"><h2>돌 ${t}개 테크</h2></div>
-      <ol class="hand-list">${lanes.map(lane => { const [name, power, fx, story] = node(lane); return `<li class="hand-row"><div class="hand-body">
-        <div class="hand-title"><b class="rank">힘 ${power}</b> <strong>${name}</strong> <small class="muted">${TREE[lane].name}</small></div>
-        <p class="why">${story}</p>${fxLine(name, fx)}
-        ${t < LAST_TURN ? `<p class="muted">다음: ${dot('B')} ${next(lane, 'B')} · ${dot('W')} ${next(lane, 'W')}</p>` : ''}
-      </div></li>`; }).join('')}</ol>
-      <p class="legend">돌 하나가 흑 가지나 백 가지 하나를 고릅니다. 가지는 갈라졌다 합쳐집니다. 힘이 센 쪽이 이기고, 같으면 무승부입니다.</p>`;
-  }
   const row = (r, i) => `<li class="hand-row ${r[4] ? 'special' : ''}">
       ${artImg(HAND_ART[r[2]], 'thumb')}
       <div class="hand-body">
@@ -289,6 +302,7 @@ const screens = {
     return `${hud(t)}${eraBanner(t)}${layout(`<h2 class="act">돌 나눠 주기</h2>
       <p class="muted">${s.mods.bag ? '주머니에서 꺼낸' : ''} 돌 3개를 아무 문명에나 줍니다. ${pend.length}/3개.</p>
       ${stockHTML(v, v, pend)}
+      ${s.mods.tree ? `<div class="only-phone">${treeMap(treeMarks(v, true))}</div>` : ''}
       <div class="cards mine">${[0,1,2].map(assignCard).join('')}</div>
       ${cardsHTML(v)}${foeCards(v)}${historyHTML()}`,
       `<div class="actionbar">${tableButton}<button data-act="undo" ${pend.length ? '' : 'disabled'}>하나 취소</button><button class="primary" data-act="confirmAssign" ${ok ? '' : 'disabled'}>돌 배치 확정</button></div>`)}`;
