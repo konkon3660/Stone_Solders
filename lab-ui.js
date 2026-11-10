@@ -147,27 +147,38 @@ function cardsHTML(view) {
     <p class="muted">${nameOf(1 - view)} 카드 ${s.mods.cards}장: ${shown.length ? `${shown.join(', ')} 공개` : '모두 비공개'}</p>`;
 }
 
-// 테크 트리 지도: 줄은 돌 개수, 열은 갈래. 갈래 머리에 흑·백을 놓으면 갈 갈래를 적는다. marks[갈래+돌 개수] = 그 칸에 있는 내 문명 글자.
-const FX_SHORT = { peek:'엿보기', break:'뒤집기', capture:'점령', score:'승점 +', lock:'출전 금지', rest:'안 쉼' };
+// 테크 트리 지도: 삼각형. 줄은 돌 개수, 흑 가지는 왼쪽 아래, 백 가지는 오른쪽 아래. marks['돌 개수,백돌 개수'] = 그 노드에 있는 내 문명 글자.
+const FX_SHORT = { peek:'엿보기', break:'뒤집기', capture:'점령', lock:'출전 금지', rest:'안 쉼' };
 const fxShort = fx => !fx ? '' : fx[0] === 'score' ? `승점 +${fx[1]}` : fx[1] ? `${FX_SHORT[fx[0]]} ${fx[1]}` : FX_SHORT[fx[0]];
 function treeMarks(v, withPend) {
   const marks = {};
   if (v === null) return marks;
   s.players[v].civs.forEach((civ, i) => {
     const stones = [...civ.stones, ...(withPend ? pend.filter(m => m[0] === i).map(m => stoneOf(m[1])) : [])];
-    if (stones.length) (marks[treeHand(seqOfStones(s.mods, stones)).lane + stones.length] ??= []).push(LETTERS[i]);
+    if (stones.length) (marks[stones.length + ',' + treeHand(seqOfStones(s.mods, stones)).node] ??= []).push(LETTERS[i]);
   });
   return marks;
 }
 function treeMap(marks) {
-  const lanes = Object.keys(TREE);
-  const head = lanes.map(l => `<th scope="col">${TREE[l].name}<small>${dot('B')}${TREE[TREE[l].B].name}</small><small>${dot('W')}${TREE[TREE[l].W].name}</small></th>`).join('');
-  const rows = Object.keys(TABLES).map(d => `<tr><th scope="row">${d}</th>${lanes.map(l => {
-    const n = TREE[l].at[d], m = marks[l + d];
-    return !n ? '<td></td>' : `<td class="${m ? 'here' : ''}"${n[3] ? ` title="${n[3]}"` : ''}>${m ? `<em>${m.join(' ')}</em>` : ''}<b>${n[0]}</b><span>힘 ${n[1]}</span>${n[2] ? `<small>${fxShort(n[2])}</small>` : ''}</td>`;
-  }).join('')}</tr>`).join('');
-  return `<div class="tree-wrap"><table class="tree"><thead><tr><th scope="col">돌</th>${head}</tr></thead><tbody>${rows}</tbody></table></div>
-    <p class="legend">첫 돌이 흑이면 군대, 백이면 학문에서 시작합니다. 그다음은 지금 갈래 머리에 적힌 대로 흑이나 백을 놓은 갈래의 한 칸 아래로 갑니다. 금색 칸의 글자가 내 문명 위치입니다. 힘이 센 쪽이 이기고, 같으면 무승부입니다.</p>`;
+  const DX = 64, DY = 78, NW = 60, NH = 50, W = 8 * DX + 8, H = 40 + 6 * DY + NH + 6;
+  const at = (d, k) => [W / 2 + (k - d / 2) * DX, 40 + (d - 1) * DY]; // 노드 가운데 x, 위쪽 y
+  const here = new Set(Object.keys(marks)), next = new Set([...here].flatMap(key => { const [d, k] = key.split(',').map(Number); return d < LAST_TURN ? [`${d + 1},${k}`, `${d + 1},${k + 1}`] : []; }));
+  const edge = (x1, y1, d, k, c, hot) => {
+    const [x2, y2] = at(d, k), mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+    return `<g class="edge ${c === 'B' ? 'eb' : 'ew'}${hot ? ' hot' : ''}"><line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"/><circle cx="${mx}" cy="${my}" r="4.5"/></g>`;
+  };
+  let edges = edge(W / 2, 28, 1, 0, 'B', !here.size) + edge(W / 2, 28, 1, 1, 'W', !here.size), nodes = '<circle class="root" cx="' + W / 2 + '" cy="16" r="12"/><text class="root-t" x="' + W / 2 + '" y="20">시작</text>';
+  for (let d = 1; d <= LAST_TURN; d++) for (let k = 0; k <= d; k++) {
+    const [x, y] = at(d, k), [name, power, fx, story] = TREE[d][k], key = `${d},${k}`, hot = here.has(key);
+    if (d < LAST_TURN) edges += edge(x, y + NH, d + 1, k, 'B', hot) + edge(x, y + NH, d + 1, k + 1, 'W', hot);
+    const lines = [...name.split(' ').map(t => ['n', t]), ['p', `힘 ${power}`], ...(fx ? [['f', fxShort(fx)]] : [])];
+    const y0 = y + (NH - lines.length * 11.5) / 2 + 9;
+    nodes += `<g class="node${hot ? ' here' : next.has(key) ? ' next' : ''}"><title>${name}: ${story}</title><rect x="${x - NW / 2}" y="${y}" width="${NW}" height="${NH}" rx="6"/>
+      ${lines.map(([c, t], i) => `<text class="t${c}" x="${x}" y="${y0 + i * 11.5}">${t}</text>`).join('')}
+      ${hot ? `<rect class="badge" x="${x - NW / 2}" y="${y - 13}" width="${NW}" height="12" rx="3"/><text class="tb" x="${x}" y="${y - 4}">${marks[key].join(' ')}</text>` : ''}</g>`;
+  }
+  return `<div class="tree-wrap"><svg class="tree-svg${here.size ? ' marked' : ''}" viewBox="0 0 ${W} ${H}" role="img" aria-label="테크 트리 지도">${edges}${nodes}</svg></div>
+    <p class="legend">흑을 놓으면 왼쪽 아래, 백을 놓으면 오른쪽 아래로 갑니다. 가지는 이웃 가지와 합쳐집니다. 금색이 내 문명 위치, 점선이 다음에 갈 수 있는 곳입니다. 힘이 센 쪽이 이기고, 같으면 무승부입니다. 노드에 마우스를 올리면 이야기가 보입니다.</p>`;
 }
 
 function tableHTML() {

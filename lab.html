@@ -25,17 +25,28 @@
 .pick.offer .labels > * { display: block; white-space: normal; margin-top: 3px; }
 .hand-row > .hand-body:first-child { grid-column: 1 / -1; }
 .tree-wrap { overflow-x: auto; margin-top: 8px; }
-.tree { width: 100%; min-width: 330px; border-collapse: collapse; table-layout: fixed; font-size: .74rem; line-height: 1.25; }
-.tree th, .tree td { border: 1px solid var(--line); padding: 4px 2px; text-align: center; vertical-align: top; word-break: keep-all; }
-.tree thead th { background: var(--panel-2); font-size: .78rem; }
-.tree thead small { display: block; font-weight: normal; color: var(--muted); white-space: nowrap; }
-.tree thead .dot { width: 9px; height: 9px; margin-right: 2px; vertical-align: -1px; }
-.tree tr > th:first-child { width: 24px; color: var(--muted); }
-.tree td b { display: block; font-weight: 600; }
-.tree td span { display: block; color: var(--gold); }
-.tree td small { display: block; color: var(--special); }
-.tree td.here { background: #3a372c; box-shadow: inset 0 0 0 2px var(--gold); }
-.tree td em { display: block; font-style: normal; font-weight: 700; color: var(--bg); background: var(--gold); border-radius: 4px; margin-bottom: 2px; }
+.tree-svg { display: block; width: 100%; min-width: 400px; height: auto; }
+.tree-svg text { text-anchor: middle; font-size: 11px; fill: var(--ink); }
+.tree-svg .tn { font-weight: 600; }
+.tree-svg .tp { fill: var(--gold); font-size: 10.5px; }
+.tree-svg .tf { fill: var(--special); font-size: 9.5px; }
+.tree-svg .node rect { fill: var(--panel-2); stroke: var(--line); }
+.tree-svg .node.here rect { fill: #3a372c; stroke: var(--gold); stroke-width: 2.5; }
+.tree-svg .node.next rect { stroke: var(--gold); stroke-dasharray: 4 3; }
+.tree-svg .node rect.badge { fill: var(--gold); stroke: none; }
+.tree-svg .tb { fill: var(--bg); font-size: 10px; font-weight: 700; }
+.tree-svg .edge line { stroke-width: 2; }
+.tree-svg .eb line { stroke: #6c757b; }
+.tree-svg .ew line { stroke: #cfccc4; }
+.tree-svg .edge circle { stroke: #8a9298; stroke-width: 1; }
+.tree-svg .eb circle { fill: #0b0d0e; }
+.tree-svg .ew circle { fill: #f2f0ea; }
+.tree-svg.marked .edge { opacity: .35; }
+.tree-svg.marked .edge.hot { opacity: 1; }
+.tree-svg.marked .edge.hot line { stroke-width: 3.5; }
+.tree-svg .root { fill: var(--panel-2); stroke: var(--line); }
+.tree-svg .root-t { font-size: 9px; fill: var(--muted); }
+@media (min-width: 1000px) { .layout { grid-template-columns: minmax(0, 1fr) 470px; } }
 .perms { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 8px; margin-top: 4px; }
 @media (min-width: 720px) { .mods { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 </style>
