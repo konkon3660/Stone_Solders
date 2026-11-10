@@ -2,14 +2,14 @@
 const app = document.getElementById('app');
 const sheet = document.getElementById('table-sheet');
 const LETTERS = 'ABC';
-const mods = { ability:true, rush:true, carry:true, draw:true, final:false, fronts:false, bomb:false, shape:false, bag:false, augment:false, cards:2 };
+const mods = { exp:'none', bag:false, bomb:false, cards:2 };
 let acts = [null, null], keepIdx = null;
 let s, mode, phase = 'start', viewer = 0, moves, fighters, pend = [], pick = null, tableTurn = 1, opened = false;
 
 const nameOf = p => mode === 'bot' ? ['나','봇'][p] : `플레이어 ${p + 1}`;
 const eul = word => (word.charCodeAt(word.length - 1) - 0xAC00) % 28 ? '을' : '를';
 const rankTag = rank => `<b class="rank ${rank === 1 ? 'top' : rank <= 3 ? 'high' : ''}">${rank}위</b>`;
-const handLine = e => `${rankTag(e.rank)} <span class="hand-name">${e.name}</span>${e.special ? ' <span class="star">★</span>' : ''}`;
+const handLine = e => `${s.mods.tree ? `<b class="rank">힘 ${e.power}</b>` : rankTag(e.rank)} <span class="hand-name">${e.name}</span>${e.special ? ' <span class="star">★</span>' : ''}`;
 const beatText = (t, count) => { const names = TABLES[t].slice(0, count).map(row => row[2]); return `${names.join(', ')}${eul(names.at(-1))} 이긴다`; };
 const artImg = (art, cls = '') => !art ? '' : `<img class="${cls}" src="${art.file}" alt="${art.title}" loading="lazy" style="object-position:${art.pos ?? 'center'}">`;
 const dot = (c, gray = false) => `<span class="dot ${c === 'B' ? 'b' : c === 'W' ? 'w' : 'g'}${gray ? ' gray' : ''}"></span>`;
@@ -18,8 +18,8 @@ const shapeDots = shape => { const [pattern, note] = shape.split('|'); return `<
 const isHidden = (st, owner, view) => st.kind === 'G' && !st.revealed && view !== 'all' && view !== owner && st.seenBy !== view;
 const stoneHTML = (st, owner, view) => isHidden(st, owner, view) ? '<span class="stone hidden" role="img" aria-label="공개되지 않은 회색돌">?</span>'
   : `<span class="stone ${st.color === 'B' ? 'b' : 'w'}${st.kind === 'G' ? ' from-gray' : ''}"></span>`;
-const fxLine = name => s.mods.ability && !isFinal(s) && abilityText(name) ? `<p class="note">능력: ${abilityText(name)}</p>` : '';
-const eraTag = n => s.mods.rush ? `<small class="muted">${ERAS[n][0]}</small> ` : '';
+const fxLine = (name, fx) => !isFinal(s) && abilityText(name, fx) ? `<p class="note">능력: ${abilityText(name, fx)}</p>` : '';
+const eraTag = n => s.mods.tree ? '' : `<small class="muted">${ERAS[n][0]}</small> `;
 const secretOwner = () => mode === 'bot' || ['prep', 'assign', 'tactic', 'fight'].includes(phase) ? viewer : null;
 
 function banTag(civ) {
@@ -51,10 +51,10 @@ function civCard(owner, i, view) {
   const civ = s.players[owner].civs[i], banned = !s.mods.fronts && civ.bannedThrough >= s.turn && !s.over && !isFinal(s);
   let info = '';
   if (civ.stones.length && !s.over) {
-    if (view === owner) { const e = handOf(s, owner, i); info = eraTag(e.age) + handLine(e) + fxLine(e.name); }
+    if (view === owner) { const e = handOf(s, owner, i); info = eraTag(civ.stones.length) + handLine(e) + fxLine(e.name, e.fx); }
     else if (view !== null) {
-      const r = handRange(s, owner, i, view);
-      info = eraTag(civ.stones.length) + (r.best.rank === r.worst.rank ? handLine(r.best) : `가능 ${r.best.rank}~${r.worst.rank}위`);
+      const r = handRange(s, owner, i, view), same = r.best.name === r.worst.name;
+      info = eraTag(civ.stones.length) + (same ? handLine(r.best) : s.mods.tree ? `가능 힘 ${r.worst.power}~${r.best.power}` : `가능 ${r.best.rank}~${r.worst.rank}위`);
     }
   }
   return `<article class="card ${banned ? 'banned' : ''}">
@@ -66,14 +66,14 @@ function civCard(owner, i, view) {
 }
 
 function assignCard(i) {
-  const v = viewer, me = s.players[v], civ = me.civs[i], rush = s.mods.rush, mine = pend.filter(m => m[0] === i);
-  const queued = rush ? mine.map(m => stoneOf(m[1])) : [];
+  const v = viewer, me = s.players[v], civ = me.civs[i], mine = pend.filter(m => m[0] === i);
+  const queued = mine.map(m => stoneOf(m[1]));
   const picks = TOKEN_KEYS.map(k => {
-    const [kind, color] = TOKENS[k], left = me.stock[k] - pend.filter(m => m[1] === k && (rush || m[0] !== i)).length;
-    const full = rush && (pend.length >= 3 || civ.stones.length + mine.length >= LAST_TURN);
+    const [kind, color] = TOKENS[k], left = me.stock[k] - pend.filter(m => m[1] === k).length;
+    const full = pend.length >= 3 || civ.stones.length + mine.length >= LAST_TURN;
     const stones = [...civ.stones, ...queued, stoneOf(k)], e = stones.length <= LAST_TURN ? judge(s.mods, seqOfStones(s.mods, stones), me.cards) : null;
     const barred = s.fx.blocked[v]?.civ === i && s.fx.blocked[v].token === k;
-    return `<button class="pick" data-act="assign" data-i="${i}" data-kind="${k}" aria-pressed="${!rush && mine[0]?.[1] === k}" ${left > 0 && !full && !barred ? '' : 'disabled'}>
+    return `<button class="pick" data-act="assign" data-i="${i}" data-kind="${k}" ${left > 0 && !full && !barred ? '' : 'disabled'}>
       <span class="stone ${color === 'B' ? 'b' : 'w'}${kind === 'G' ? ' from-gray' : ''}"></span>
       <span class="labels"><small>${kind === 'G' ? '회색' : { B:'흑', W:'백' }[color]}</small><span class="name">${e ? eraTag(stones.length) + handLine(e) : "가득 참"}</span></span>
     </button>`;
@@ -95,9 +95,9 @@ function fightCard(i) {
     <div class="stones">${civ.stones.map(st => stoneHTML(st, v, v)).join('') || '<span class="empty">돌 없음</span>'}</div>
     ${bombLine(civ.stones, v, v)}${path(v, i, v)}
     ${e ? `<div class="hand-mini">${artImg(HAND_ART[e.name], 'thumb')}<div>
-      <p class="hand">${eraTag(e.age)}${handLine(e)}</p>
+      <p class="hand">${eraTag(civ.stones.length)}${handLine(e)}</p>
       <p class="muted">${e.why}</p>
-      ${e.special ? `<p class="beats">${beatText(e.age, e.beats)}</p>` : fxLine(e.name)}
+      ${e.special ? `<p class="beats">${beatText(e.age, e.beats)}</p>` : fxLine(e.name, e.fx)}
     </div></div>` : ''}
     <button class="fight" data-act="fight" data-i="${i}" aria-pressed="${pick === i}" ${legal ? '' : 'disabled'}>${label}</button>
   </article>`;
@@ -130,8 +130,9 @@ function useSelect(stage, hand) {
 }
 const handNow = v => phase === 'prep' && keepIdx !== null ? [...s.players[v].hand, s.players[v].offer[keepIdx]] : s.players[v].hand;
 
+const noCards = () => s.mods.shape || s.mods.tree;
 function cardsHTML(view) {
-  if (s.mods.shape) return '';
+  if (noCards()) return '';
   const shown = s.shown[1 - view];
   const card = name => {
     const t = specialTurn(name), row = TABLES[t].find(r => r[2] === name);
@@ -153,17 +154,29 @@ function tableHTML() {
     </div></li>`).join('')}</ol>
     <p class="legend">돌을 받은 순서까지 봅니다. 위가 강하고 같은 족보끼리는 무승부. 일곱 턴 내내 같은 표입니다.</p>`;
   const t = tableTurn, me = secretOwner(), mine = me === null ? [] : s.players[me].cards;
+  const tabs = `<div class="tabs">${Object.keys(TABLES).map(u => `<button class="tab" data-act="tableTab" data-t="${u}" aria-pressed="${Number(u) === t}" aria-label="돌 ${u}개 족보">${u}</button>`).join('')}</div>`;
+  if (s.mods.tree) {
+    const node = lane => TREE[lane].at[t], next = (lane, c) => TREE[TREE[lane][c]].at[t + 1][0];
+    const lanes = Object.keys(TREE).filter(node).sort((a, b) => node(b)[1] - node(a)[1]);
+    return `${tabs}<div class="hand-head"><h2>돌 ${t}개 테크</h2></div>
+      <ol class="hand-list">${lanes.map(lane => { const [name, power, fx, story] = node(lane); return `<li class="hand-row"><div class="hand-body">
+        <div class="hand-title"><b class="rank">힘 ${power}</b> <strong>${name}</strong> <small class="muted">${TREE[lane].name}</small></div>
+        <p class="why">${story}</p>${fxLine(name, fx)}
+        ${t < LAST_TURN ? `<p class="muted">다음: ${dot('B')} ${next(lane, 'B')} · ${dot('W')} ${next(lane, 'W')}</p>` : ''}
+      </div></li>`; }).join('')}</ol>
+      <p class="legend">돌 하나가 흑 가지나 백 가지 하나를 고릅니다. 가지는 갈라졌다 합쳐집니다. 힘이 센 쪽이 이기고, 같으면 무승부입니다.</p>`;
+  }
   const row = (r, i) => `<li class="hand-row ${r[4] ? 'special' : ''}">
       ${artImg(HAND_ART[r[2]], 'thumb')}
       <div class="hand-body">
         <div class="hand-title">${rankTag(i + 1)} <strong>${r[2]}</strong>${r[4] ? ' <span class="star">★</span>' : ''}${mine.includes(r[2]) ? ' <span class="pill">내 카드</span>' : ''}</div>
         <div class="hand-shape">${r[4] ? shapeDots(r[5]) : dotsOf('B'.repeat(r[0]) + 'W'.repeat(r[1]))}</div>
         <p class="why">${r[3]}</p>
-        ${r[4] ? `<p class="beats">${beatText(t, r[6] ?? 1)}</p>` : fxLine(r[2])}
+        ${r[4] ? `<p class="beats">${beatText(t, r[6] ?? 1)}</p>` : fxLine(r[2], ABILITY[r[2]])}
       </div>
     </li>`;
-  return `<div class="tabs">${Object.keys(TABLES).map(u => `<button class="tab" data-act="tableTab" data-t="${u}" aria-pressed="${Number(u) === t}" aria-label="돌 ${u}개 족보">${u}</button>`).join('')}</div>
-    <div class="hand-head"><h2>${s.mods.rush ? `돌 ${t}개` : `${t}턴`} ${ERAS[t][0]}</h2><span class="points">${s.mods.rush ? '' : `승리 ${pointsFor(t)}점`}</span></div>
+  return `${tabs}
+    <div class="hand-head"><h2>돌 ${t}개 ${ERAS[t][0]}</h2></div>
     <ol class="hand-list">${TABLES[t].map(row).join('')}</ol>`;
 }
 
@@ -179,12 +192,13 @@ function hud(now) {
     const h = s.history.find(x => x.turn === t), tag = !h ? pointsFor(t) + '점' : h.winner === null ? '무' : mode === 'hotseat' ? `P${h.winner + 1}` : h.winner === viewer ? '승' : '패';
     return `<li class="pip ${t === now ? 'now' : ''} ${h && h.winner !== null && mode !== 'hotseat' ? (h.winner === viewer ? 'win' : 'lose') : ''}">${t}턴<b>${tag}</b></li>`;
   }).join('');
-  const on = MODS.filter(m => s.mods[m.id]).map(m => m.name).concat(s.mods.shape ? [] : `불가사의 ${s.mods.cards}장`).join(' · ');
+  const on = [...EXPERIMENTS, ...ADDONS].filter(m => s.mods[m.id]).map(m => m.name);
+  const tags = [on.length ? on.join(' · ') : '본 게임 규칙', ...(noCards() ? [] : [`불가사의 ${s.mods.cards}장`])].join(' · ');
   return `<header class="hud"><div class="score">${nameOf(0)} <b>${s.players[0].score}</b>점 : <b>${s.players[1].score}</b>점 ${nameOf(1)}</div><ol class="pips">${pips}</ol></header>
-    <p class="on-mods">실험실: ${on}${s.mods.carry && s.pot ? ` · 이월 ${s.pot}점` : ''}</p>`;
+    <p class="on-mods">실험실: ${tags}${s.pot ? ` · 이월 ${s.pot}점` : ''}</p>`;
 }
 
-const eraBanner = t => `<section class="era">${artImg(ERA_ART[t])}<div class="era-text"><h1>${t}/${LAST_TURN}턴 · ${ERAS[t][0]}</h1><p>${s.mods.rush ? '문명마다 돌 개수가 곧 시대다.' : ERAS[t][1]} <span class="nowrap">승리 시 ${pointsFor(t) + s.pot}점${s.pot ? ` (이월 ${s.pot}점 포함)` : ''}.</span>${isFinal(s) ? ' 세 전선 결전.' : ''}</p></div></section>`;
+const eraBanner = t => `<section class="era">${artImg(ERA_ART[t])}<div class="era-text"><h1>${t}/${LAST_TURN}턴${s.mods.tree ? '' : ` · ${ERAS[t][0]}`}</h1><p>${s.mods.tree ? '돌 하나가 테크 트리의 갈래 하나를 고른다.' : '문명마다 돌 개수가 곧 시대다.'} <span class="nowrap">승리 시 ${pointsFor(t) + s.pot}점${s.pot ? ` (이월 ${s.pot}점 포함)` : ''}.</span>${isFinal(s) ? ' 세 전선 결전.' : ''}</p></div></section>`;
 const tableButton = '<button class="only-phone" data-act="openTable">족보표</button>';
 const layout = (main, bar = '') => `<div class="layout"><main>${main}${bar}</main><aside class="rail">${tableHTML()}</aside></div>`;
 const foeCards = v => `${augLine(v)}<h2 class="sub">${nameOf(1 - v)} 문명</h2>${stockHTML(1 - v, v)}<div class="cards">${[0,1,2].map(i => civCard(1 - v, i, v)).join('')}</div>`;
@@ -195,6 +209,7 @@ function reason(b) {
   if (b.reversed) return '시대 역행으로 순위가 거꾸로 적용됨';
   const w = b.hands[b.winner], l = b.hands[1 - b.winner];
   if (!l) return '상대 문명이 없어 승리';
+  if (s.mods.tree) return `힘 ${w.power} 대 ${l.power}로 이김`;
   if (w.age !== l.age) return '더 앞선 시대가 이김';
   if (w.special && l.rank <= w.beats) return `★ ${w.name}${eul(w.name) === '을' ? '이' : '가'} 상위 족보를 잡음`;
   return `${w.rank}위가 ${l.rank}위를 이김`;
@@ -233,15 +248,17 @@ const screens = {
       : '<p class="bar"><button class="primary" data-act="drawGo">돌 21개 뽑기</button></p>'}</div>`,
 
   start: () => `<section class="era hero">${artImg(ERA_ART[6])}<div class="era-text"><h1>실험실</h1><p>새 규칙을 켜고 끄며 시험하는 판입니다. 마음에 드는 실험만 본 게임으로 옮깁니다.</p></div></section>
-    <div class="mods">${MODS.map(m => `<button class="mod" data-act="toggle" data-id="${m.id}" aria-pressed="${mods[m.id]}"><b>${m.name}</b><small>${m.desc}</small></button>`).join('')}</div>
-    <div class="panel"><strong>불가사의 카드</strong> <span class="bar" style="display:inline-flex;margin:0 0 0 10px">${[2,3,4].map(n => `<button class="tab" data-act="cards" data-n="${n}" aria-pressed="${mods.cards === n}">${n}장</button>`).join('')}</span>
-      <p class="bar"><button data-act="all" data-on="1">전부 켜기</button><button data-act="all" data-on="">전부 끄기</button></p></div>
+    <h2 class="sub">실험 하나 고르기</h2>
+    <div class="mods">${[{ id:'none', name:'실험 없음', desc:'본 게임 규칙 그대로 둔다.' }, ...EXPERIMENTS].map(m => `<button class="mod" data-act="exp" data-id="${m.id}" aria-pressed="${mods.exp === m.id}"><b>${m.name}</b><small>${m.desc}</small></button>`).join('')}</div>
+    <h2 class="sub">같이 켤 수 있는 규칙</h2>
+    <div class="mods">${ADDONS.map(m => `<button class="mod" data-act="toggle" data-id="${m.id}" aria-pressed="${mods[m.id]}"><b>${m.name}</b><small>${m.desc}</small></button>`).join('')}</div>
+    <div class="panel"><strong>불가사의 카드</strong> <span class="bar" style="display:inline-flex;margin:0 0 0 10px">${[2,3,4].map(n => `<button class="tab" data-act="cards" data-n="${n}" aria-pressed="${mods.cards === n}">${n}장</button>`).join('')}</span></div>
     <div class="modes">
       <button class="primary" data-act="start" data-mode="bot">봇과 시험</button>
       <button class="primary" data-act="start" data-mode="hotseat">둘이서 시험</button>
       <a class="primary" href="index.html">본 게임으로</a>
     </div>
-    <p class="muted">기본 규칙은 본 게임과 같습니다: 돌 21개, 문명 3개, 일곱 턴, 불가사의 카드, 출전 제한. 봇은 켠 규칙을 모두 쓰지만 약합니다.</p>`,
+    <p class="muted">본 게임 규칙은 늘 켜져 있습니다: 돌 뽑기, 테크 러시, 테크 능력, 무승부 이월, 불가사의 카드, 출전 제한. 봇은 켠 규칙을 모두 쓰지만 약합니다.</p>`,
 
   prep: () => {
     const v = viewer, t = s.turn, me = s.players[v];
@@ -270,11 +287,11 @@ const screens = {
   assign: () => {
     const v = viewer, t = s.turn, ok = pend.length === 3;
     return `${hud(t)}${eraBanner(t)}${layout(`<h2 class="act">돌 나눠 주기</h2>
-      <p class="muted">${s.mods.rush ? `돌 3개를 아무 문명에나 줍니다. ${pend.length}/3개.` : s.mods.bag ? '뽑은 돌을 문명마다 하나씩 나눠 줍니다.' : '문명마다 돌 하나씩, 색은 자유입니다.'}</p>
+      <p class="muted">${s.mods.bag ? '주머니에서 꺼낸' : ''} 돌 3개를 아무 문명에나 줍니다. ${pend.length}/3개.</p>
       ${stockHTML(v, v, pend)}
       <div class="cards mine">${[0,1,2].map(assignCard).join('')}</div>
       ${cardsHTML(v)}${foeCards(v)}${historyHTML()}`,
-      `<div class="actionbar">${tableButton}${s.mods.rush ? `<button data-act="undo" ${pend.length ? '' : 'disabled'}>하나 취소</button>` : ''}<button class="primary" data-act="confirmAssign" ${ok ? '' : 'disabled'}>돌 배치 확정</button></div>`)}`;
+      `<div class="actionbar">${tableButton}<button data-act="undo" ${pend.length ? '' : 'disabled'}>하나 취소</button><button class="primary" data-act="confirmAssign" ${ok ? '' : 'disabled'}>돌 배치 확정</button></div>`)}`;
   },
 
   fight: () => {
@@ -288,7 +305,7 @@ const screens = {
   result: () => {
     const h = s.history.at(-1), view = mode === 'hotseat' ? null : viewer;
     const headline = h.truce ? '휴전' : h.winner === null ? '무승부' : `${nameOf(h.winner)} 승리`;
-    return `${hud(h.turn)}${layout(`<p class="muted turn-label">${h.turn}/${LAST_TURN}턴 · ${ERAS[h.turn][0]}</p><h1 class="result-line">${headline}</h1>
+    return `${hud(h.turn)}${layout(`<p class="muted turn-label">${h.turn}/${LAST_TURN}턴</p><h1 class="result-line">${headline}</h1>
       ${h.battles[0]?.final && h.winner !== null ? `<p class="reason">결전 승리 +${h.gain}점</p>` : ''}
       ${h.log.length ? `<ul class="fx">${h.log.map(e => `<li>${nameOf(e.p)}: ${e.text}</li>`).join('')}</ul>` : ''}
       ${h.battles.map((b, i) => battleHTML(b, i, view)).join('')}
@@ -301,8 +318,8 @@ const screens = {
     const [a, b] = s.players.map(p => p.score), w = winnerOf(s);
     return `<section class="era">${artImg(ERA_ART[7])}<div class="era-text"><h1>${w === null ? '무승부' : `${nameOf(w)} 승리`}</h1><p class="score">${nameOf(0)} ${a}점 : ${b}점 ${nameOf(1)}</p></div></section>
       <p class="bar"><button class="primary" data-act="start" data-mode="${mode}">같은 실험 다시</button><button data-act="home">실험 바꾸기</button></p>
-      <p class="muted" ${s.mods.shape ? 'hidden' : ''}>불가사의 카드 · ${[0, 1].map(p => `${nameOf(p)}: ${s.players[p].cards.join(', ')}`).join(' · ')}</p>
-      ${s.mods.draw ? `<p class="muted">뽑은 돌 · ${[0, 1].map(p => `${nameOf(p)}: 흑 ${s.players[p].drawn[0]} 백 ${s.players[p].drawn[1]} 회색 ${s.players[p].drawn[2]}${s.players[p].jackpot ? ' (대박)' : ''}`).join(' · ')}</p>` : ''}
+      <p class="muted" ${noCards() ? 'hidden' : ''}>불가사의 카드 · ${[0, 1].map(p => `${nameOf(p)}: ${s.players[p].cards.join(', ')}`).join(' · ')}</p>
+      <p class="muted">뽑은 돌 · ${[0, 1].map(p => `${nameOf(p)}: 흑 ${s.players[p].drawn[0]} 백 ${s.players[p].drawn[1]} 회색 ${s.players[p].drawn[2]}${s.players[p].jackpot ? ' (대박)' : ''}`).join(' · ')}</p>
       <h2 class="sub">${nameOf(0)} 문명</h2><div class="cards">${[0,1,2].map(i => civCard(0, i, 'all')).join('')}</div>
       <h2 class="sub">${nameOf(1)} 문명</h2><div class="cards">${[0,1,2].map(i => civCard(1, i, 'all')).join('')}</div>${historyHTML(true)}`;
   },
@@ -336,15 +353,15 @@ function afterStep(turn) {
 const actions = {
   toggle({ id }) { mods[id] = !mods[id]; },
   cards({ n }) { mods.cards = Number(n); },
-  all({ on }) { MODS.forEach(m => { mods[m.id] = !!on; }); },
-  start({ mode: m }) { mode = m; s = labNewGame(mods); if (s.mods.draw) { opened = false; phase = 'draw'; } else beginTurn(); },
+  exp({ id }) { mods.exp = id; },
+  start({ mode: m }) { mode = m; s = labNewGame(mods); opened = false; phase = 'draw'; },
   drawGo() { opened = true; },
   drawDone() { beginTurn(); },
   home() { phase = 'start'; },
   ready() { enterStage(); },
   assign({ i, kind }) {
     const c = Number(i);
-    pend = s.mods.rush ? [...pend, [c, kind]] : [...pend.filter(m => m[0] !== c), [c, kind]];
+    pend = [...pend, [c, kind]];
   },
   undo() { pend = pend.slice(0, -1); },
   keep({ i }) { keepIdx = Number(i); },

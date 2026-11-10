@@ -100,8 +100,8 @@ const ABILITY = {
   '철갑선':['capture',2], '기관총':['break',2], '노동조합':['lock'], '백과사전':['peek',3], '신문':['score',1], '러다이트':['break',2],
   '실리콘밸리':['score',1], '가짜 뉴스':['score',2], '냉전':['score',1], '감시 국가':['score',1], '핵겨울':['score',2],
 };
-const abilityText = name => {
-  const fx = ABILITY[name];
+// fx를 주면 그 능력을 쓴다(실험실 테크 트리 노드). 없으면 족보 이름으로 찾는다.
+const abilityText = (name, fx = ABILITY[name]) => {
   if (!fx) return '';
   const [kind, n] = fx;
   return { peek:`상대 숨은 회색돌 ${n}개 공개`, break:`상대 최강 문명의 마지막 돌 ${n}개 뒤집기`, capture:`이기면 진 문명의 마지막 돌 ${n}개 뒤집기`, score:`승점 +${n}`, lock:'상대 최강 문명 다음 턴 출전 금지', rest:'이 문명은 쉬지 않음' }[kind];
@@ -209,7 +209,7 @@ function strongest(s, p, handAt = civHand) {
 
 // 전투 뒤 테크 능력. beaten: 맞붙은 상대 문명, foe: 상대 최강 문명. 발동하면 화면에 쓸 기록을 돌려준다.
 function useAbility(s, p, c, hand, winner, beaten, foe) {
-  const fx = hand && !hand.special && ABILITY[hand.name];
+  const fx = hand && !hand.special && ('fx' in hand ? hand.fx : ABILITY[hand.name]);
   if (!fx) return null;
   const [kind, n] = fx, q = 1 - p, who = `문명 ${'ABC'[foe]}`;
   if (kind === 'capture') {

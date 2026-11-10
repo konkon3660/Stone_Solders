@@ -1,21 +1,18 @@
 // 실험실 규칙: 버릴 시험판. game.js의 족보표와 판정 위에 켠 실험만 얹는다. 성공한 실험만 game.js로 옮긴다.
 // ponytail: 온라인 없음. 봇은 규칙을 모르는 몬테카를로라 약하다. 살아남은 실험만 전용 봇을 만든다.
-const MODS = [
-  { id:'shape', name:'모양 족보', desc:'돌 순서의 모양으로 판정한다. 표 한 장, 여섯 줄을 일곱 턴 내내 쓴다. 불가사의 카드와 테크 능력은 쓰지 않는다.' },
-  { id:'bag', name:'주머니 뽑기', desc:'돌 21개를 섞어 주머니에 넣고 매 턴 3개를 뽑아 세 문명에 나눠 준다. 뽑은 돌은 상대도 본다(회색돌 속 색은 숨김).' },
+// 본 게임 규칙(테크 능력, 테크 러시, 무승부 이월, 돌 뽑기)은 늘 켠다. 실험은 서로 섞이지 않으니 하나만 고른다.
+const EXPERIMENTS = [
+  { id:'tree', name:'테크 트리', desc:'족보표 대신 테크 트리. 돌 하나가 흑 가지나 백 가지 하나를 고르고, 가지는 갈라졌다 합쳐진다. 노드마다 힘이 있고 힘이 센 쪽이 이긴다. 군대는 일찍 세고 학문은 늦게 크며, 상업과 문화는 약한 대신 능력이 있다. 불가사의 카드는 없다.' },
+  { id:'shape', name:'모양 족보', desc:'돌 순서의 모양으로 판정한다. 표 한 장, 여섯 줄을 돌 개수와 상관없이 쓴다. 불가사의 카드와 테크 능력은 없다.' },
   { id:'augment', name:'증강 모드', desc:'매 턴 카드 2장 중 1장을 손패로 가져온다. 돌 배치 전 준비 카드, 배치 공개 후 전술 카드 중 턴당 1장을 쓴다.' },
-  { id:'ability', name:'테크 능력', desc:'1위가 아닌 족보로 출전하면 전투 뒤 능력이 발동한다. 약한 족보일수록 능력이 세다. 전차 같은 군사 테크는 이기면 진 문명을 점령한다.' },
-  { id:'rush', name:'테크 러시', desc:'한 턴의 돌 3개를 아무 문명에나 몰아줄 수 있다(문명당 7개까지). 돌이 더 많은 문명, 곧 더 앞선 시대가 무조건 이긴다.' },
-  { id:'carry', name:'무승부 이월', desc:'비기면 그 점수가 다음 승부에 얹힌다.' },
-  { id:'draw', name:'돌 뽑기', desc:'흑7·백7·회색7 대신 돌 21개를 무작위로 뽑는다. 가끔 흑이나 백이 17개 쏠린 대박이 나온다.' },
+  { id:'fronts', name:'세 전선', desc:'출전을 고르지 않고 문명 A·B·C가 상대 A·B·C와 매 턴 동시에 싸운다. 출전 제한은 없고, 회색돌은 끝까지 숨는다.' },
   { id:'final', name:'최종 결전', desc:'7턴에는 세 문명을 전선 1·2·3에 비밀로 배치해 동시에 싸운다. 이긴 전선이 더 많은 쪽이 7턴 점수와 이월 점수를 모두 가져간다. 7턴에는 능력이 없다.' },
-  { id:'fronts', name:'세 전선 (매 턴)', desc:'출전을 고르지 않고 문명 A·B·C가 상대 A·B·C와 매 턴 동시에 싸운다. 출전 제한은 없고, 회색돌은 끝까지 숨는다. 최종 결전보다 우선한다.' },
+];
+// 어느 실험에나 얹을 수 있는 간단한 규칙.
+const ADDONS = [
+  { id:'bag', name:'주머니 뽑기', desc:'뽑은 돌 21개를 섞어 주머니에 넣고 매 턴 3개를 꺼내 쓴다. 꺼낸 돌은 상대도 본다(회색돌 속 색은 숨김).' },
   { id:'bomb', name:'회색 폭발', desc:'회색돌이 같은 색 돌 사이에 낀 돌을 뒤집는다. 족보를 정할 때 적용한다.' },
 ];
-
-const STOCK = 7;
-// 세 문명에 하나씩 줄 때의 모든 경우.
-const OPTIONS = TOKEN_KEYS.flatMap(a => TOKEN_KEYS.flatMap(b => TOKEN_KEYS.map(c => [a, b, c])));
 // 모양 족보, 강한 순서: [이름, 설명, 예시]. 대체로 드문 모양이 위고, 외톨이만 하이리스크 규칙으로 꼴찌다.
 const SHAPES = [
   ['외길','전부 같은 색','BBBBB'],
@@ -38,7 +35,62 @@ function shapeHand(seq) {
   const i = shapeIndex(seq), black = countBlack(seq);
   return { black, white:seq.length - black, rank:i + 1, name:SHAPES[i][0], why:SHAPES[i][1], special:false, beats:0 };
 }
-const judge = (mods, seq, cards) => mods.shape ? shapeHand(seq) : evaluate(seq.length, seq, cards);
+// ---------- 테크 트리 ----------
+// 갈래마다 흑 가지(B)와 백 가지(W)가 가는 갈래, 돌 개수별 노드 [이름, 힘, 능력, 이야기]. 가지는 갈라졌다 합쳐진다.
+// 이야기는 노드에 닿은 사연이다. 어느 부모에서 와도 말이 되게 쓴다.
+// 군대는 일찍 세지만 끝이 약하고, 학문은 늦게 크며, 상업과 문화는 약한 대신 능력이 있다. 다음 힘만 좇으면 흑만 쌓여 핵무기에 그친다.
+const TREE_ROOT = { B:'A', W:'F' };
+const TREE = {
+  A:{ name:'군대', B:'A', W:'C', at:{
+    1:['돌창',2,null,'돌을 깎아 창을 들었다.'],
+    2:['청동검',3,null,'청동을 녹여 검을 벼렸다.'],
+    3:['전차',5,null,'말이 끄는 전차로 들판을 휩쓸었다.'],
+    4:['기사단',7,null,'갑옷 입은 기사들이 땅을 차지했다.'],
+    5:['머스킷 부대',8,['capture',1],'총을 든 보병이 줄지어 진군했다.'],
+    6:['기관총',9,['capture',2],'기관총이 전장을 갈아엎었다.'],
+    7:['핵무기',11,null,'쓸 수 없는 무기만 쌓여 갔다.'] } },
+  B:{ name:'공학', B:'A', W:'D', at:{
+    2:['대장간',2,null,'불로 쇠를 다루는 법을 익혔다.'],
+    3:['바퀴',3,['rest'],'바퀴를 굴려 먼 곳까지 오갔다.'],
+    4:['투석기',5,['break',1],'셈을 해서 돌을 성벽 너머로 날렸다.'],
+    5:['대포',7,['break',2],'화약을 쇠통에 담아 성벽을 무너뜨렸다.'],
+    6:['증기기관',9,null,'증기의 힘으로 기계를 돌렸다.'],
+    7:['로켓',12,null,'로켓을 쏘아 하늘 끝에 닿았다.'] } },
+  C:{ name:'통치', B:'C', W:'D', at:{
+    2:['족장',2,null,'무리를 이끌 족장이 나섰다.'],
+    3:['법전',4,['lock'],'법을 돌에 새겨 모두를 묶었다.'],
+    4:['왕국',6,null,'군대와 법을 갖춘 왕국을 세웠다.'],
+    5:['절대 왕정',8,['lock'],'왕이 모든 권력을 한 손에 쥐었다.'],
+    6:['제국',10,null,'여러 나라를 거느린 제국이 되었다.'],
+    7:['초강대국',13,null,'온 세계가 그 나라의 눈치를 보았다.'] } },
+  D:{ name:'상업', B:'B', W:'E', at:{
+    3:['화폐',3,['score',1],'조개 대신 동전으로 물건을 사고팔았다.'],
+    4:['길드',4,['score',1],'장인과 상인이 모여 조합을 꾸렸다.'],
+    5:['무역 회사',5,['score',1],'배를 띄워 먼 바다 너머와 거래했다.'],
+    6:['은행',7,['score',2],'돈을 빌려주고 이자를 받았다.'],
+    7:['세계 시장',9,['score',2],'온 세계가 하나의 시장이 되었다.'] } },
+  E:{ name:'문화', B:'C', W:'F', at:{
+    4:['축제',4,['rest'],'넉넉해진 사람들이 축제를 열었다.'],
+    5:['르네상스',6,['score',1],'부자들이 예술가를 후원했다.'],
+    6:['신문',8,['peek',3],'신문이 감춰진 일을 들춰냈다.'],
+    7:['대중문화',10,['score',2],'노래와 영화가 국경을 넘었다.'] } },
+  F:{ name:'학문', B:'B', W:'F', at:{
+    1:['불',1,['peek',1],'불을 피워 밤을 밝혔다.'],
+    2:['문자',2,['peek',1],'기억을 글자로 남겼다.'],
+    3:['철학',3,['peek',2],'세상이 왜 이런지 묻기 시작했다.'],
+    4:['대학',5,['peek',2],'학자들이 모여 대학을 세웠다.'],
+    5:['과학 혁명',7,null,'실험으로 하늘과 땅의 법칙을 밝혔다.'],
+    6:['백과사전',11,null,'세상의 지식을 책 한 질에 모았다.'],
+    7:['인터넷',16,null,'모든 지식이 모두에게 열렸다.'] } },
+};
+// 돌 순서를 따라 나무를 걷는다. why는 지나온 이야기 전부.
+function treeHand(seq) {
+  let lane = null;
+  const story = [...seq].map((c, i) => { lane = (lane ? TREE[lane] : TREE_ROOT)[c]; return TREE[lane].at[i + 1][3]; });
+  const [name, power, fx] = TREE[lane].at[seq.length], black = countBlack(seq);
+  return { black, white:seq.length - black, rank:1, name, why:story.join(' '), special:false, beats:0, power, fx, lane };
+}
+const judge = (mods, seq, cards) => mods.tree ? treeHand(seq) : mods.shape ? shapeHand(seq) : evaluate(seq.length, seq, cards);
 
 const shuffled = (a, rng) => a.map(x => [rng(), x]).sort((p, q) => p[0] - q[0]).map(x => x[1]);
 // 주머니 뽑기: stock을 이번 턴에 뽑은 돌로 바꾼다.
@@ -74,12 +126,12 @@ const CARDS = {
     uses:(s, p) => stonesWhere(s, 1 - p, st => st.kind === 'G' && !st.revealed && st.seenBy !== p),
     run:(s, p, u) => { s.players[1 - p].civs[u.civ].stones[u.i].seenBy = p; } },
   '전리품':{ stage:'tactic', order:3, n:2, until:7, text:'이번 턴 내가 이기면 승점 1점을 더 얻는다.',
-    uses:s => isFinal(s) ? [] : noTarget(), run:(s, p) => { s.fx.spoils[p] = true; } },
+    uses:noTarget, run:(s, p) => { s.fx.spoils[p] = true; } },
   '강행군':{ stage:'tactic', order:1, n:2, until:7, text:'내 문명 하나의 출전 제한을 1턴 줄인다.',
-    uses:(s, p) => s.mods.fronts ? [] : allCivs().filter(x => s.players[p].civs[x.civ].bannedThrough >= s.turn),
+    uses:(s, p) => allCivs().filter(x => s.players[p].civs[x.civ].bannedThrough >= s.turn),
     run:(s, p, u) => { s.players[p].civs[u.civ].bannedThrough--; } },
   '전선 봉쇄':{ stage:'tactic', order:1, n:1, until:6, text:'상대 문명 하나를 이번 턴 출전하지 못하게 한다. 출전 가능 문명이 하나뿐이면 못 쓴다. 7턴 불가.',
-    uses:(s, p) => !s.mods.fronts && fightable(s, 1 - p).length > 1 ? fightable(s, 1 - p).map(civ => ({ civ })) : [],
+    uses:(s, p) => fightable(s, 1 - p).length > 1 ? fightable(s, 1 - p).map(civ => ({ civ })) : [],
     run:(s, p, u) => { const civ = s.players[1 - p].civs[u.civ]; civ.bannedThrough = Math.max(civ.bannedThrough, s.turn); } },
   '총력전':{ stage:'tactic', order:3, n:1, until:6, text:'이번 턴 승점이 누가 이기든 2배가 된다. 7턴 불가.',
     uses:noTarget, run:s => { s.fx.double = true; } },
@@ -131,7 +183,6 @@ function labTactic(prev, acts) {
   const s = cloneS(prev);
   applyUses(s, acts.map(a => a?.use ?? null));
   if (s.fx.truce) return finish(s, []);
-  if (s.mods.fronts) return finish(s, [0,1,2].map(i => resolve(s, i, i)));
   s.stage = 'fight';
   return s;
 }
@@ -150,7 +201,10 @@ function explode(stones) {
 const seqOfStones = (mods, stones) => mods.bomb ? explode(stones) : stones.map(st => st.color).join('');
 const handOf = (s, p, i) => {
   const stones = s.players[p].civs[i].stones;
-  return stones.length ? { ...judge(s.mods, seqOfStones(s.mods, stones), s.players[p].cards), age:stones.length } : null;
+  if (!stones.length) return null;
+  const h = judge(s.mods, seqOfStones(s.mods, stones), s.players[p].cards);
+  // clash는 age부터 비교한다. 나무에서는 돌 개수 대신 힘으로 겨룬다.
+  return { ...h, age:s.mods.tree ? h.power : stones.length };
 };
 
 // 공개 정보만으로 본 상대 문명의 족보 범위.
@@ -160,35 +214,37 @@ function handRange(s, owner, i, view) {
   const all = fills('?'.repeat(stones.filter(hidden).length)).map(f => {
     let j = 0;
     return judge(s.mods, seqOfStones(s.mods, stones.map(st => hidden(st) ? { ...st, color:f[j++] } : st)), s.shown[owner]);
-  }).sort((a, b) => a.rank - b.rank);
+  }).sort((a, b) => (b.power ?? 0) - (a.power ?? 0) || a.rank - b.rank);
   return { best:all[0], worst:all.at(-1) };
 }
 
-function labNewGame(mods, rng = Math.random) {
+// mods = { exp:실험 id 또는 'none', bag, bomb, cards }. 판 안에서는 s.mods[실험 id]가 true다.
+function labNewGame(choice, rng = Math.random) {
+  const mods = { ...choice, [choice.exp]:true };
   const deck = SPECIALS.map(name => [rng(), name]).sort((a, b) => a[0] - b[0]).map(([, name]) => name);
   const player = p => {
-    const [drawn, jackpot] = mods.draw ? drawStones(rng) : [[STOCK, STOCK, STOCK], null], [B, W, G] = drawn;
+    const [drawn, jackpot] = drawStones(rng), [B, W, G] = drawn;
     const GB = Array.from({ length:G }, () => rng()).filter(x => x < 0.5).length;
     const pl = { score:0, drawn, jackpot, stock:{ B, W, GB, GW:G - GB }, cards:deck.slice(p * mods.cards, (p + 1) * mods.cards), civs:[0,1,2].map(() => ({ stones:[], bannedThrough:0 })) };
     if (mods.bag) { pl.bag = shuffled(Object.entries(pl.stock).flatMap(([k, n]) => Array(n).fill(k)), rng); drawFromBag(pl); }
     if (mods.augment) { pl.deck = shuffled(DECK, rng); pl.hand = []; offerCards(pl); }
     return pl;
   };
-  return { turn:1, stage:mods.augment ? 'prep' : 'assign', over:false, mods:{ ...mods }, pot:0, fx:newFx(), shown:[[], []], players:[player(0), player(1)], history:[] };
+  return { turn:1, stage:mods.augment ? 'prep' : 'assign', over:false, mods, pot:0, fx:newFx(), shown:[[], []], players:[player(0), player(1)], history:[] };
 }
 
 const cloneS = s => ({ ...copyState(s), shown:s.shown.map(a => [...a]),
   fx:{ ...s.fx, blocked:[...s.fx.blocked], spoils:[...s.fx.spoils], used:[...s.fx.used], log:[...s.fx.log] } });
 // 최종 결전: 세 문명을 전선 1·2·3에 놓는 여섯 가지 순서. 7턴이면 어느 규칙에서든 모든 문명이 돌 7개다.
 const PERMS = [[0,1,2],[0,2,1],[1,0,2],[1,2,0],[2,0,1],[2,1,0]];
-const isFinal = s => s.mods.final && !s.mods.fronts && s.turn === LAST_TURN;
+const isFinal = s => s.mods.final && s.turn === LAST_TURN;
 // 고를 수 있는 것: 보통은 문명 번호, 최종 결전이면 PERMS 번호.
 const fightable = (s, p) => isFinal(s) ? [0,1,2,3,4,5] : [0,1,2].filter(i => s.players[p].civs[i].bannedThrough < s.turn && s.players[p].civs[i].stones.length);
 
 // 봉쇄해도 q가 돌 세 개를 다 둘 수 있어야 한다. 막힌 색 돌은 나머지 문명 자리에만 들어간다.
 function canBlock(s, q, u) {
   const pl = s.players[q], free = TOKEN_KEYS.reduce((n, k) => n + (k === u.block ? 0 : pl.stock[k]), 0);
-  const room = s.mods.rush ? [0,1,2].reduce((n, c) => n + (c === u.civ ? 0 : LAST_TURN - pl.civs[c].stones.length), 0) : 2;
+  const room = [0,1,2].reduce((n, c) => n + (c === u.civ ? 0 : LAST_TURN - pl.civs[c].stones.length), 0);
   return Math.max(0, 3 - free) <= room;
 }
 
@@ -198,7 +254,7 @@ function canMove(s, p, mv) {
   const pl = s.players[p], onCiv = c => mv.filter(m => m[0] === c).length, block = s.fx.blocked[p];
   if (!TOKEN_KEYS.every(k => mv.filter(m => m[1] === k).length <= pl.stock[k])) return false;
   if (block && mv.some(m => m[0] === block.civ && m[1] === block.token)) return false;
-  return s.mods.rush ? [0,1,2].every(c => pl.civs[c].stones.length + onCiv(c) <= LAST_TURN) : [0,1,2].every(c => onCiv(c) === 1);
+  return [0,1,2].every(c => pl.civs[c].stones.length + onCiv(c) <= LAST_TURN);
 }
 
 // a, b: 맞붙는 문명 번호. 출전할 문명이 없으면 null.
@@ -209,9 +265,9 @@ function resolve(s, a, b) {
   if (!mods.fronts) picks.forEach((c, p) => { if (c !== null) s.players[p].civs[c].stones.forEach(st => { st.revealed = true; }); });
   const turned = h => h && s.fx.reverse ? { ...h, rank:1000 - h.rank, beats:0 } : h;
   const winner = clash(turned(hands[0]), turned(hands[1])), gain = winner === null ? 0 : (pointsFor(t) + s.pot) * (s.fx.double ? 2 : 1) + (s.fx.spoils[winner] ? 1 : 0);
-  if (winner !== null) { s.players[winner].score += gain; s.pot = 0; } else if (mods.carry) s.pot += pointsFor(t);
+  if (winner !== null) { s.players[winner].score += gain; s.pot = 0; } else s.pot += pointsFor(t);
   if (!mods.fronts) picks.forEach((c, p) => { if (c !== null) s.players[p].civs[c].bannedThrough = t + (p === winner ? 2 : 1); });
-  const effects = picks.map((c, p) => c === null || !mods.ability ? null : useAbility(s, p, c, hands[p], winner, picks[1 - p], strongest(s, 1 - p, handOf))).filter(Boolean);
+  const effects = picks.map((c, p) => c === null ? null : useAbility(s, p, c, hands[p], winner, picks[1 - p], strongest(s, 1 - p, handOf))).filter(Boolean);
   hands.forEach((h, p) => { if (h?.special && !s.shown[p].includes(h.name)) s.shown[p].push(h.name); });
   return { fighters:picks, seqs, hands, winner, gain, effects, reversed:s.fx.reverse };
 }
@@ -267,9 +323,8 @@ function randomMove(s, p, rng) {
   for (let tries = 0; tries < 9999; tries++) {
     const left = { ...s.players[p].stock }, room = s.players[p].civs.map(c => LAST_TURN - c.stones.length), block = s.fx.blocked[p];
     const ok = (c, k) => left[k] > 0 && !(block && block.civ === c && block.token === k);
-    // 봉쇄당한 문명이 먼저 골라야 돌이 모자라 막히지 않는다.
-    const mv = (block ? [block.civ, ...[0,1,2].filter(i => i !== block.civ)] : [0,1,2]).map(n => {
-      const c = s.mods.rush ? pickOf([0,1,2].filter(i => room[i] > 0 && TOKEN_KEYS.some(k => ok(i, k))), rng) : n;
+    const mv = [0,1,2].map(() => {
+      const c = pickOf([0,1,2].filter(i => room[i] > 0 && TOKEN_KEYS.some(k => ok(i, k))), rng);
       const k = pickOf(TOKEN_KEYS.filter(x => ok(c, x)), rng);
       left[k]--; room[c]--;
       return [c, k];
@@ -284,8 +339,9 @@ function moveValue(s, p, mv) {
   return [0,1,2].reduce((sum, c) => {
     const stones = [...s.players[p].civs[c].stones, ...mv.filter(m => m[0] === c).map(m => stoneOf(m[1]))];
     if (!stones.length) return sum;
-    const rows = s.mods.shape ? SHAPES.length : TABLES[stones.length].length, e = judge(s.mods, seqOfStones(s.mods, stones), s.players[p].cards);
-    return sum + 1 - (e.rank - 1) / rows + (s.mods.rush ? stones.length * 0.3 : 0);
+    const e = judge(s.mods, seqOfStones(s.mods, stones), s.players[p].cards);
+    if (s.mods.tree) return sum + e.power / 6;
+    return sum + 1 - (e.rank - 1) / (s.mods.shape ? SHAPES.length : TABLES[stones.length].length) + stones.length * 0.3;
   }, 0);
 }
 function quickMove(s, p, rng) {
@@ -297,7 +353,8 @@ function quickField(s, p, rng) {
   const legal = fightable(s, p);
   if (!legal.length) return null;
   if (isFinal(s) || rng() < 0.3) return pickOf(legal, rng);
-  return legal.reduce((a, b) => handOf(s, p, b).rank < handOf(s, p, a).rank ? b : a);
+  const key = c => { const h = handOf(s, p, c); return h.age * 100 - h.rank; };
+  return legal.reduce((a, b) => key(b) > key(a) ? b : a);
 }
 function playout(s, rng) {
   while (!s.over) {
@@ -326,7 +383,7 @@ function imagine(s, p, rng) {
 }
 
 function labBotMove(s, p, rng = Math.random) {
-  const all = s.mods.rush ? Array.from({ length:BOT.cands }, () => randomMove(s, p, rng)) : OPTIONS.map(o => o.map((k, i) => [i, k])).filter(mv => canMove(s, p, mv)).sort(() => rng() - 0.5).slice(0, BOT.cands);
+  const all = Array.from({ length:BOT.cands }, () => randomMove(s, p, rng));
   let best = all[0], bv = -Infinity;
   for (const mv of all) {
     let sum = 0;
@@ -396,14 +453,25 @@ function labSelfCheck() {
   let x = 7;
   const rng = () => (x = x * 16807 % 2147483647) / 2147483647;
   for (let i = 0; i < 200; i++) eq(drawStones(rng)[0].reduce((a, b) => a + b), 21, '뽑은 돌은 21개');
+  // 돌 뽑기가 늘 켜져 있으니 돌 수가 중요한 점검은 재고를 고정한다.
+  const full = (color, n = 7) => Array.from({ length:n }, () => st(color));
+  const game = (exp, rest = {}) => { const g = labNewGame({ exp, bag:false, bomb:false, cards:2, ...rest }, rng); g.players.forEach(pl => { if (!pl.bag) pl.stock = { B:7, W:7, GB:4, GW:3 }; }); return g; };
+  // 테크 트리: 어떤 순서로 둬도 노드가 있고, 모든 노드에 닿을 수 있다.
+  const reached = new Set();
+  for (let n = 1; n <= LAST_TURN; n++) fills('?'.repeat(n)).forEach(q => reached.add(treeHand(q).lane + n));
+  eq(reached.size, Object.values(TREE).reduce((k, l) => k + Object.keys(l.at).length, 0), '테크 트리 노드는 모두 닿을 수 있음');
+  [['WWWWWWW','인터넷'],['BBBBBBB','핵무기'],['BBBBBBW','초강대국'],['BWW','화폐'],['WB','대장간']].forEach(([q, name]) => eq(treeHand(q).name, name, `테크 트리 ${q}`));
+  const tg = game('tree');
+  tg.players[0].civs[0].stones = full('B', 4); // 기사단, 힘 7
+  tg.players[1].civs[0].stones = [...'BWBBW'].map(c => st(c)); // 무역 회사, 힘 5
+  eq(clash(handOf(tg, 0, 0), handOf(tg, 1, 0)), 0, '테크 트리: 돌이 적어도 힘이 세면 이김');
   // 점령은 이겼을 때 진 문명만 뒤집는다. 결전은 이긴 전선이 많은 쪽이 판돈을 가져간다.
-  const none = Object.fromEntries(MODS.map(m => [m.id, false])), full = (color, n = 7) => Array.from({ length:n }, () => st(color));
-  const cap = labNewGame({ ...none, ability:true, cards:2 }, rng);
+  const cap = game('none');
   cap.players[1].civs[0].stones = full('W', 3);
   eq(useAbility(cap, 0, 0, { name:'전차', special:false }, 1, 0), null, '지면 점령 없음');
   useAbility(cap, 0, 0, { name:'전차', special:false }, 0, 0);
   eq(cap.players[1].civs[0].stones.at(-1).color + cap.players[1].civs[0].stones[1].color, 'BW', '이기면 마지막 돌만 점령');
-  const end = { ...labNewGame({ ...none, final:true, cards:2 }, rng), turn:LAST_TURN, stage:'fight', pot:2 };
+  const end = { ...game('final'), turn:LAST_TURN, stage:'fight', pot:2 };
   end.players[0].cards = end.players[1].cards = [];
   end.players[0].civs.forEach((c, i) => { c.stones = full(i < 2 ? 'W' : 'B'); });
   end.players[1].civs.forEach((c, i) => { c.stones = full(i < 1 ? 'W' : 'B'); });
@@ -413,10 +481,9 @@ function labSelfCheck() {
   [['B','외길'],['BBBBBBB','외길'],['BW','교대'],['BWBWBWB','교대'],['BWWB','대칭'],['BBBWW','두 덩이'],['BBWBW','잡탕'],['BBBWB','외톨이'],['BBBBW','외톨이']]
     .forEach(([q, name]) => eq(shapeHand(q).name, name, `모양 ${q}`));
   for (let n = 4; n <= LAST_TURN; n++) for (let i = 0; i < n; i++) eq(shapeHand('B'.repeat(i) + 'W' + 'B'.repeat(n - 1 - i)).rank, SHAPES.length, '외길에서 한 돌 빗나가면 꼴찌');
-  const off = Object.fromEntries(MODS.map(m => [m.id, false]));
   // 증강 카드 규칙.
   eq(DECK.length, 18, '증강 덱 18장');
-  let h = labNewGame({ ...off, augment:true, cards:2 }, rng);
+  let h = game('augment');
   eq(h.stage, 'prep', '증강은 카드부터');
   h.players[0].offer = ['봉쇄', '신탁'];
   h = labPrep(h, [{ keep:'봉쇄', use:{ card:'봉쇄', civ:0, block:'B' } }, null]);
@@ -434,22 +501,23 @@ function labSelfCheck() {
   tr = labPrep(tr, [{ keep:'개종', use:{ card:'개종', civ:0, i:0 } }, { keep:'선동', use:{ card:'선동', civ:0, i:0 } }]);
   eq(tr.players[0].civs[0].stones[0].color, 'B', '같은 돌을 바꾸면 둘 다 무효');
   // 러시 후반 봉쇄: 막힌 돌이 들어갈 자리가 없으면 못 쓰고, 자리가 있으면 무작위 배치가 답을 찾는다.
-  const tight = labNewGame({ ...off, rush:true, augment:true, cards:2 }, rng), foe = tight.players[1];
+  const tight = game('augment'), foe = tight.players[1];
   [7, 6, 2].forEach((n, c) => { foe.civs[c].stones = Array.from({ length:n }, () => stoneOf('B')); });
   foe.stock = { ...foe.stock, B:1, W:2, GB:0, GW:0 };
   eq(canBlock(tight, 1, { civ:2, block:'W' }), false, '막힌 돌 둘 자리가 없으면 봉쇄 불가');
   eq(canBlock(tight, 1, { civ:2, block:'B' }), true, '자리가 있으면 봉쇄 가능');
   tight.fx.blocked[1] = { civ:2, token:'B' };
   for (let i = 0; i < 200; i++) eq(canMove(tight, 1, randomMove(tight, 1, rng)), true, '봉쇄돼도 무작위 배치는 합법');
-  for (const on of [...MODS.map(m => [m.id]), MODS.map(m => m.id)]) {
-    let g = labNewGame({ ...off, ...Object.fromEntries(on.map(id => [id, true])), cards:2 }, rng);
+  // 실험마다, 간단한 규칙을 얹고 안 얹고 무작위로 끝까지 둔다.
+  for (const exp of ['none', ...EXPERIMENTS.map(m => m.id)]) for (const on of [false, true]) {
+    let g = labNewGame({ exp, bag:on, bomb:on, cards:2 }, rng);
     while (!g.over) {
       if (g.stage === 'prep' || g.stage === 'tactic') g = (g.stage === 'prep' ? labPrep : labTactic)(g, [0, 1].map(p => randomAct(g, p, g.stage, rng)));
       else if (g.stage === 'assign') g = labPlace(g, [randomMove(g, 0, rng), randomMove(g, 1, rng)]);
       else g = labFight(g, [0, 1].map(p => { const l = fightable(g, p); return l.length ? pickOf(l, rng) : null; }));
     }
-    eq(g.players.every(p => p.civs.flatMap(c => c.stones).length === 21 && Object.values(p.stock).every(n => n === 0)), true, `${on} 돌 21개를 다 씀`);
-    eq(g.history.length, LAST_TURN, `${on} 일곱 턴`);
+    eq(g.players.every(p => p.civs.flatMap(c => c.stones).length === 21 && Object.values(p.stock).every(n => n === 0)), true, `${exp} ${on} 돌 21개를 다 씀`);
+    eq(g.history.length, LAST_TURN, `${exp} ${on} 일곱 턴`);
   }
 }
 labSelfCheck();
