@@ -204,6 +204,8 @@ ol.history li { padding: 6px 0; border-top: 1px solid var(--line); }
 .modes { display: grid; gap: 8px; margin-top: 14px; }
 .modes .primary { width: 100%; }
 .modes a { display: grid; place-items: center; padding: 10px 15px; border-radius: 8px; text-decoration: none; }
+.levels { align-items: center; margin: 8px 0 0; }
+.levels span { padding-right: 6px; font-size: .85rem; color: var(--muted); }
 .join { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .join button { flex: 1; }
 .rules { padding-left: 1.2em; margin: 8px 0 0; }

@@ -249,6 +249,7 @@ const screens = {
       <button class="primary" data-act="host">온라인 방 만들기</button>
       <a class="primary" href="lab.html">실험실 게임</a>
     </div>
+    <div class="tabs levels" role="group" aria-label="봇 난이도"><span>봇 난이도</span>${Object.entries(BOT_LEVELS).map(([id, l]) => `<button class="tab" data-act="level" data-level="${id}" aria-pressed="${BOT_TRIES.name === l.name}">${l.name}</button>`).join('')}</div>
     <div class="panel join">
       <label for="join-code">받은 방 코드</label>
       <input id="join-code" maxlength="4" autocomplete="off" value="${/^#[A-Za-z0-9]{4}$/.test(location.hash) ? location.hash.slice(1).toUpperCase() : ''}">
@@ -393,6 +394,7 @@ function beginTurn() {
 
 const actions = {
   start({ mode: m }) { leaveRoom(); mode = m; s = newGame(); showDraw(); },
+  level({ level }) { Object.assign(BOT_TRIES, BOT_LEVELS[level]); },
   drawGo() { opened = true; },
   drawDone() { if (mode === 'online') enterStage(); else beginTurn(); },
   home() { leaveRoom(); phase = 'start'; },

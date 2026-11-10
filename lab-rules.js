@@ -2,60 +2,86 @@
 // ponytail: 온라인 없음. 봇은 규칙을 모르는 몬테카를로라 약하다. 살아남은 실험만 전용 봇을 만든다.
 // 본 게임 규칙(테크 능력, 테크 러시, 무승부 이월, 돌 뽑기)은 늘 켠다. 실험은 서로 섞이지 않으니 하나만 고른다.
 const EXPERIMENTS = [
-  { id:'tree', name:'테크 트리', desc:'족보표 대신 삼각형 테크 트리. 흑을 놓으면 왼쪽 아래, 백을 놓으면 오른쪽 아래로 가고, 가지는 이웃과 합쳐진다. 노드마다 힘이 있고 힘이 센 쪽이 이긴다. 흑만 쌓은 군대는 일찍 세고 백만 쌓은 학문은 늦게 크며, 가운데는 약한 대신 능력이 있다. 불가사의 카드는 없다.' },
-  { id:'shape', name:'모양 족보', desc:'돌 순서의 모양으로 판정한다. 표 한 장, 여섯 줄을 돌 개수와 상관없이 쓴다. 불가사의 카드와 테크 능력은 없다.' },
-  { id:'augment', name:'증강 모드', desc:'매 턴 카드 2장 중 1장을 손패로 가져온다. 돌 배치 전 준비 카드, 배치 공개 후 전술 카드 중 턴당 1장을 쓴다.' },
+  { id:'tree', name:'테크 트리', desc:'족보표 대신 삼각형 테크 트리. 흑을 놓으면 왼쪽 아래, 백을 놓으면 오른쪽 아래로 가고, 가지는 이웃과 합쳐진다. 노드마다 힘이 있고 힘이 센 쪽이 이긴다. 힘은 오르기만 하지 않는다: 황금기 뒤에 쇠퇴하고, 혁명의 혼란 뒤에 크게 뛴다. 불가사의 카드는 비밀 가지다. 카드 주인이 정해진 순서로 그 자리에 닿으면 불가사의가 되고, 힘이 일정 이상인 문명을 잡는다.' },
+  { id:'augment', name:'증강 모드', desc:'매 턴 카드 2장 중 1장을 손패로 가져온다. 돌 배치 전 준비 카드, 배치 공개 후 전술 카드를 제한 없이 쓴다. 양쪽이 한 장씩 동시에 공개하고, 둘 다 안 쓰면 다음 단계로 넘어간다.' },
   { id:'fronts', name:'세 전선', desc:'출전을 고르지 않고 문명 A·B·C가 상대 A·B·C와 매 턴 동시에 싸운다. 출전 제한은 없고, 회색돌은 끝까지 숨는다.' },
   { id:'final', name:'최종 결전', desc:'7턴에는 세 문명을 전선 1·2·3에 비밀로 배치해 동시에 싸운다. 이긴 전선이 더 많은 쪽이 7턴 점수와 이월 점수를 모두 가져간다. 7턴에는 능력이 없다.' },
 ];
 // 어느 실험에나 얹을 수 있는 간단한 규칙.
 const ADDONS = [
   { id:'bag', name:'주머니 뽑기', desc:'뽑은 돌 21개를 섞어 주머니에 넣고 매 턴 3개를 꺼내 쓴다. 꺼낸 돌은 상대도 본다(회색돌 속 색은 숨김).' },
-  { id:'bomb', name:'회색 폭발', desc:'회색돌이 같은 색 돌 사이에 낀 돌을 뒤집는다. 족보를 정할 때 적용한다.' },
 ];
-// 모양 족보, 강한 순서: [이름, 설명, 예시]. 대체로 드문 모양이 위고, 외톨이만 하이리스크 규칙으로 꼴찌다.
-const SHAPES = [
-  ['외길','전부 같은 색','BBBBB'],
-  ['교대','두 색이 번갈아 놓였다','BWBWB'],
-  ['대칭','앞에서 읽으나 뒤에서 읽으나 같다','BWWWB'],
-  ['두 덩이','색이 딱 한 번 바뀐다','BBBWW'],
-  ['잡탕','아무 모양도 아니다','BBWBW'],
-  ['외톨이','한 돌만 색이 달라 외길을 망쳤다','BBBWB'],
-];
-function shapeIndex(seq) {
-  const n = seq.length, black = countBlack(seq), minority = Math.min(black, n - black);
-  const changes = [...seq].slice(1).filter((c, i) => c !== seq[i]).length;
-  if (minority === 0) return 0;
-  if (changes === n - 1) return 1;
-  if (minority === 1) return 5;
-  if (seq === [...seq].reverse().join('')) return 2;
-  return changes === 1 ? 3 : 4;
-}
-function shapeHand(seq) {
-  const i = shapeIndex(seq), black = countBlack(seq);
-  return { black, white:seq.length - black, rank:i + 1, name:SHAPES[i][0], why:SHAPES[i][1], special:false, beats:0 };
-}
 // ---------- 테크 트리 ----------
-// 삼각형 나무: 흑을 놓으면 왼쪽 아래, 백을 놓으면 오른쪽 아래로 간다. 노드는 TREE[돌 개수][백돌 개수]라 이웃 가지와 합쳐진다.
-// 노드: [이름, 힘, 능력, 이야기]. 이야기는 어느 부모에서 와도 말이 되게 쓰고, 놓은 순서대로 쌓인다.
-// 왼쪽 끝(흑만)은 군대라 일찍 세지만 끝이 약하고, 오른쪽 끝(백만)은 학문이라 늦게 큰다. 가운데는 약한 대신 능력이 있다.
-// 다음 힘만 좇으면 군대를 타다 초강대국에 그치고, 인터넷과 인공지능은 백을 오래 버텨야 닿는다.
-const TREE = [null,
-  [['돌창',2,null,'돌을 깎아 창을 들었다.'], ['불',1,['peek',1],'불을 피워 밤을 밝혔다.']],
-  [['청동검',3,null,'청동을 녹여 검을 벼렸다.'], ['족장',2,['rest'],'무리를 이끌 족장이 나섰다.'], ['문자',2,['peek',1],'기억을 글자로 남겼다.']],
-  [['전차',5,null,'말이 끄는 전차로 들판을 휩쓸었다.'], ['법전',4,['lock'],'법을 돌에 새겨 모두를 묶었다.'], ['화폐',3,['score',1],'조개 대신 동전으로 물건을 사고팔았다.'], ['철학',3,['peek',2],'세상이 왜 이런지 묻기 시작했다.']],
-  [['기사단',7,null,'갑옷 입은 기사들이 땅을 차지했다.'], ['왕국',6,null,'군대와 법을 갖춘 왕국을 세웠다.'], ['길드',4,['score',1],'장인과 상인이 모여 조합을 꾸렸다.'], ['대학',5,null,'학자들이 모여 대학을 세웠다.'], ['도서관',4,['peek',2],'세상의 책을 한곳에 모았다.']],
-  [['머스킷 부대',8,['capture',1],'총을 든 보병이 줄지어 진군했다.'], ['절대 왕정',8,['lock'],'왕이 모든 권력을 한 손에 쥐었다.'], ['무역 회사',5,['score',1],'배를 띄워 먼 바다 너머와 거래했다.'], ['르네상스',6,['score',1],'부자들이 예술가와 학자를 후원했다.'], ['과학 혁명',7,null,'실험으로 하늘과 땅의 법칙을 밝혔다.'], ['계몽주의',6,['peek',2],'이성의 빛으로 낡은 믿음을 비췄다.']],
-  [['기관총',9,['capture',2],'기관총이 전장을 갈아엎었다.'], ['제국',10,null,'여러 나라를 거느린 제국이 되었다.'], ['산업 혁명',9,null,'공장의 기계가 쉬지 않고 돌았다.'], ['은행',7,['score',2],'돈을 빌려주고 이자를 받았다.'], ['시민 혁명',8,['break',2],'시민들이 일어나 낡은 질서를 무너뜨렸다.'], ['백과사전',9,['peek',3],'세상의 지식을 책 한 질에 모았다.'], ['컴퓨터',11,null,'계산하는 기계를 만들었다.']],
-  [['핵무기',10,null,'쓸 수 없는 무기만 쌓여 갔다.'], ['초강대국',12,null,'온 세계가 그 나라의 눈치를 보았다.'], ['로켓',11,null,'로켓을 쏘아 하늘 끝에 닿았다.'], ['세계 시장',9,['score',2],'온 세계가 하나의 시장이 되었다.'], ['민주주의',11,null,'모두가 한 표씩 나라의 길을 정했다.'], ['방송',10,['score',2],'전파에 실린 목소리가 온 나라에 퍼졌다.'], ['인공지능',13,null,'생각하는 기계가 깨어났다.'], ['인터넷',15,null,'모든 지식이 모두에게 열렸다.']],
-];
-// node는 백돌 개수. why는 놓은 순서대로 지나온 이야기 전부.
-function treeHand(seq) {
-  const at = i => i + 1 - countBlack(seq.slice(0, i + 1)), story = [...seq].map((_, i) => TREE[i + 1][at(i)][3]);
-  const white = at(seq.length - 1), [name, power, fx] = TREE[seq.length][white];
-  return { black:seq.length - white, white, rank:1, name, why:story.join(' '), special:false, beats:0, power, fx, node:white };
+// 노드마다 흑 가지(B)와 백 가지(W)가 가는 자식이 정해진 나무. 가지는 갈라지고, 합쳐지고(부모 1~3), 어느 색이든 한곳으로 가는 외길도 있다.
+// 그림은 늘 같은 규칙: 흑 가지는 왼쪽이나 아래, 백 가지는 오른쪽이나 아래. x는 지도에서의 열(0 군대 쪽, 6 학문 쪽).
+// 노드: [돌 개수, x, 힘, 능력, 흑 자식, 백 자식, 이야기]. 이야기는 어느 부모에서 와도 말이 되게 쓰고, 놓은 순서대로 쌓인다.
+// 힘은 오르기만 하지 않는다. 군대는 기사단에서 정점을 찍고 흔들리고, 학문은 늦게 뛴다. 황금기(절대 왕정, 르네상스, 산업 혁명) 뒤엔 떨어지고,
+// 혁명의 혼란(시민 혁명) 뒤엔 민주주의로 크게 뛴다. 언제 싸울지가 고민거리다. 약한 노드일수록 능력이 세다.
+const TREE = {
+  시작:[0, 2.75, 0, null, '돌창', '불', ''],
+  돌창:[1, 1, 2, null, '청동검', '족장', '돌을 깎아 창을 들었다.'],
+  불:[1, 4.5, 1, ['peek',1], '대장간', '문자', '불을 피워 밤을 밝혔다.'],
+  청동검:[2, 0, 3, null, '전차', '법전', '청동을 녹여 검을 벼렸다.'],
+  족장:[2, 1, 2, ['score',1], '법전', '화폐', '무리를 이끌 족장이 나섰다.'],
+  대장간:[2, 4, 2, null, '바퀴', '바퀴', '불로 쇠를 다루는 법을 익혔다.'],
+  문자:[2, 5, 2, ['peek',1], '바퀴', '철학', '기억을 글자로 남겼다.'],
+  전차:[3, 0, 5, null, '기사단', '왕국', '말이 끄는 전차로 들판을 휩쓸었다.'],
+  법전:[3, 1, 3, ['lock'], '왕국', '공화정', '법을 돌에 새겨 모두를 묶었다.'],
+  화폐:[3, 3, 2, ['score',1], '공화정', '길드', '조개 대신 동전으로 물건을 사고팔았다.'],
+  바퀴:[3, 4, 3, ['rest'], '길드', '투석기', '바퀴를 굴려 먼 곳까지 오갔다.'],
+  철학:[3, 5, 3, ['peek',2], '투석기', '도서관', '세상이 왜 이런지 묻기 시작했다.'],
+  기사단:[4, 0, 7, null, '머스킷 부대', '절대 왕정', '갑옷 입은 기사들이 땅을 차지했다.'],
+  왕국:[4, 1, 6, null, '절대 왕정', '르네상스', '군대와 법을 갖춘 왕국을 세웠다.'],
+  공화정:[4, 2, 4, ['rest'], '르네상스', '무역 회사', '왕 없이 시민들이 나라를 꾸렸다.'],
+  길드:[4, 3, 4, ['score',1], '무역 회사', '대포', '장인과 상인이 모여 조합을 꾸렸다.'],
+  투석기:[4, 4, 5, ['break',1], '대포', '과학 혁명', '셈을 해서 돌을 성벽 너머로 날렸다.'],
+  도서관:[4, 5, 3, ['peek',2], '과학 혁명', '계몽주의', '세상의 책을 한곳에 모았다.'],
+  '머스킷 부대':[5, 0, 6, ['capture',1], '기관총', '제국', '기사를 버리고 총을 든 보병으로 갈아탔다.'],
+  '절대 왕정':[5, 1, 9, ['lock'], '제국', '시민 혁명', '왕이 모든 권력을 한 손에 쥐었다.'],
+  르네상스:[5, 2, 9, null, '시민 혁명', '은행', '부자들의 후원으로 황금기가 열렸다.'],
+  '무역 회사':[5, 3, 5, ['score',2], '은행', '산업 혁명', '배를 띄워 먼 바다 너머와 거래했다.'],
+  대포:[5, 4, 7, ['break',2], '산업 혁명', '산업 혁명', '화약을 쇠통에 담아 성벽을 무너뜨렸다.'],
+  '과학 혁명':[5, 5, 6, null, '산업 혁명', '백과사전', '실험으로 하늘과 땅의 법칙을 밝혔다.'],
+  계몽주의:[5, 6, 5, ['peek',2], '백과사전', '전신', '이성의 빛으로 낡은 믿음을 비췄다.'],
+  기관총:[6, 0, 8, ['capture',2], '핵무기', '초강대국', '기관총이 전장을 갈아엎었다.'],
+  제국:[6, 1, 10, null, '초강대국', '세계 시장', '여러 나라를 거느린 제국이 되었다.'],
+  '시민 혁명':[6, 2, 4, ['break',3], '초강대국', '민주주의', '시민들이 일어나 낡은 질서를 무너뜨렸다. 나라가 잠시 흔들렸다.'],
+  은행:[6, 3, 6, ['score',2], '세계 시장', '세계 시장', '돈을 빌려주고 이자를 받았다.'],
+  '산업 혁명':[6, 4, 11, null, '로켓', '인공지능', '공장의 기계가 쉬지 않고 돌았다.'],
+  백과사전:[6, 5, 7, ['peek',3], '로켓', '인공지능', '세상의 지식을 책 한 질에 모았다.'],
+  전신:[6, 6, 6, ['rest'], '인공지능', '인터넷', '전선을 타고 소식이 순식간에 오갔다.'],
+  핵무기:[7, 0, 7, ['break',3], null, null, '쓸 수 없는 무기만 쌓여 갔다.'],
+  초강대국:[7, 1, 12, null, null, null, '온 세계가 그 나라의 눈치를 보았다.'],
+  민주주의:[7, 2, 14, null, null, null, '모두가 한 표씩 나라의 길을 정했다.'],
+  '세계 시장':[7, 3, 8, ['score',3], null, null, '온 세계가 하나의 시장이 되었다.'],
+  로켓:[7, 4, 10, null, null, null, '로켓을 쏘아 하늘 끝에 닿았다.'],
+  인공지능:[7, 5, 12, null, null, null, '생각하는 기계가 깨어났다.'],
+  인터넷:[7, 6, 13, null, null, null, '모든 지식이 모두에게 열렸다.'],
+};
+// 돌 순서를 따라 나무를 걷는다. 지나온 노드 이름들.
+const treeWalk = seq => [...seq].reduce((path, c) => [...path, TREE[path.at(-1)][c === 'B' ? 4 : 5]], ['시작']).slice(1);
+// 불가사의 = 비밀 가지. 본 게임 불가사의 행 [흑, 백, 이름, 이유, 순서 규칙, 모양, 이기는 상위 수]을 같은 돌 개수에 쓴다.
+// 카드 주인이 그 순서로 놓으면 닿은 노드 대신 불가사의가 된다. 힘은 그 노드와 같고, 힘이 catch 이상인 문명을 잡는다(돌이 더 많아도).
+// catch = 그 돌 개수에서 가장 큰 힘 - (이기는 상위 수 - 1). example은 지도에 별을 찍을 대표 순서.
+const maxPower = d => Math.max(...Object.values(TREE).filter(n => n[0] === d).map(n => n[2]));
+const WONDERS = Object.values(TABLES).flat().filter(r => r[4]).map(([b, w, name, why, re, shape, beats = 1]) => {
+  const plain = shape.split('|')[0].replace(/[[\]]/g, ''), example = re.test(plain) ? plain : 'BBBWWWB';
+  return { name, why, re, b, d:b + w, example, catch:maxPower(b + w) - (beats - 1) };
+});
+function treeHand(seq, cards = []) {
+  const path = treeWalk(seq), node = path.at(-1), [, , power, fx] = TREE[node], black = countBlack(seq);
+  const base = { black, white:seq.length - black, rank:1, name:node, why:path.map(n => TREE[n][6]).join(' '), special:false, beats:0, power, fx, node };
+  const wd = WONDERS.find(x => x.d === seq.length && x.b === black && x.re.test(seq) && cards.includes(x.name));
+  return wd ? { ...base, name:wd.name, why:[...path.slice(0, -1).map(n => TREE[n][6]), wd.why + '.'].join(' '), special:true, catch:wd.catch, fx:null } : base;
 }
-const judge = (mods, seq, cards) => mods.tree ? treeHand(seq) : mods.shape ? shapeHand(seq) : evaluate(seq.length, seq, cards);
+// 0: a 승, 1: b 승, null: 무승부. 불가사의가 잡는 힘이면 먼저 이기고, 아니면 힘으로 겨룬다.
+function treeClash(a, b) {
+  if (!a || !b) return a ? 0 : b ? 1 : null;
+  const ca = !!a.catch && b.power >= a.catch, cb = !!b.catch && a.power >= b.catch;
+  if (ca !== cb) return ca ? 0 : 1;
+  return a.power === b.power ? null : a.power > b.power ? 0 : 1;
+}
+const judge = (mods, seq, cards) => mods.tree ? treeHand(seq, cards) : evaluate(seq.length, seq, cards);
 
 const shuffled = (a, rng) => a.map(x => [rng(), x]).sort((p, q) => p[0] - q[0]).map(x => x[1]);
 // 주머니 뽑기: stock을 이번 턴에 뽑은 돌로 바꾼다.
@@ -66,7 +92,7 @@ function drawFromBag(pl) {
 }
 
 // ---------- 증강 모드 카드 ----------
-const newFx = () => ({ blocked:[null, null], spoils:[false, false], used:[false, false], double:false, reverse:false, truce:false, log:[] });
+const newFx = () => ({ blocked:[null, null], spoils:[false, false], double:false, reverse:false, truce:false, log:[] });
 const stonesWhere = (s, owner, test) => s.players[owner].civs.flatMap((civ, c) => civ.stones.flatMap((st, i) => test(st) ? [{ civ:c, i }] : []));
 const allCivs = () => [0,1,2].map(civ => ({ civ }));
 const noTarget = () => [{}];
@@ -108,7 +134,7 @@ const CARDS = {
 const DECK = Object.entries(CARDS).flatMap(([name, c]) => Array(c.n).fill(name));
 const offerCards = pl => { pl.offer = pl.deck.slice(0, 2); pl.deck = pl.deck.slice(2); };
 
-const legalUses = (s, p, stage, hand = s.players[p].hand) => s.fx.used[p] ? [] : [...new Set(hand)].flatMap(card => {
+const legalUses = (s, p, stage, hand = s.players[p].hand) => [...new Set(hand)].flatMap(card => {
   const c = CARDS[card];
   return c.stage === stage && s.turn <= c.until ? c.uses(s, p).map(u => ({ card, ...u })) : [];
 });
@@ -121,49 +147,42 @@ function applyUses(s, uses) {
   uses.map((u, p) => ({ u, p })).filter(x => x.u).sort((x, y) => CARDS[x.u.card].order - CARDS[y.u.card].order).forEach(({ u, p }) => {
     const pl = s.players[p], at = pl.hand.indexOf(u.card);
     pl.hand = pl.hand.filter((_, i) => i !== at);
-    s.fx.used[p] = true;
     s.fx.log.push({ p, text:[u.card, useWhere(u), voided ? '(같은 돌을 건드려 무효)' : ''].filter(Boolean).join(' ') });
     if (!voided) CARDS[u.card].run(s, p, u);
   });
 }
 
 // acts[p] = { keep:고른 카드, use:쓸 카드 또는 null }. null이면 첫 카드를 고르고 쓰지 않는다.
+// 카드는 제한 없이 쓴다. 한 장씩 동시에 공개하고, 누구든 썼으면 같은 단계를 한 번 더 한다. 손패가 줄어드니 끝난다.
 // ponytail: 손패가 3장을 넘으면 가장 오래된 카드를 자동으로 버린다. 플레이어가 고르게 하려면 단계 하나가 더 필요하다.
 function labPrep(prev, acts) {
   const s = cloneS(prev);
   const uses = acts.map((a, p) => {
-    const pl = s.players[p], keep = a?.keep ?? pl.offer[0], back = pl.offer[0] === keep ? pl.offer[1] : pl.offer[0];
-    pl.hand = [...pl.hand, keep];
-    pl.deck = [...pl.deck, back];
-    pl.offer = [];
+    const pl = s.players[p];
+    if (pl.offer.length) {
+      const keep = a?.keep ?? pl.offer[0], back = pl.offer[0] === keep ? pl.offer[1] : pl.offer[0];
+      pl.hand = [...pl.hand, keep];
+      pl.deck = [...pl.deck, back];
+      pl.offer = [];
+    }
     return a?.use ?? null;
   });
   applyUses(s, uses);
   s.players.forEach(pl => { pl.hand = pl.hand.slice(-3); });
-  s.stage = 'assign';
+  s.stage = uses.some(Boolean) ? 'prep' : 'assign';
   return s;
 }
 
 function labTactic(prev, acts) {
-  const s = cloneS(prev);
-  applyUses(s, acts.map(a => a?.use ?? null));
+  const s = cloneS(prev), uses = acts.map(a => a?.use ?? null);
+  applyUses(s, uses);
   if (s.fx.truce) return finish(s, []);
-  s.stage = 'fight';
+  s.stage = uses.some(Boolean) ? 'tactic' : 'fight';
   return s;
 }
 
-// 회색돌마다 양쪽으로 가장 가까운 같은 색 돌을 찾아 그 사이 돌을 뒤집는다.
-function explode(stones) {
-  const row = stones.map(st => st.color);
-  stones.forEach((st, i) => {
-    if (st.kind !== 'G') return;
-    const c = row[i], left = i > 0 ? row.lastIndexOf(c, i - 1) : -1, right = row.indexOf(c, i + 1);
-    if (left >= 0) for (let k = left + 1; k < i; k++) row[k] = c;
-    if (right >= 0) for (let k = i + 1; k < right; k++) row[k] = c;
-  });
-  return row.join('');
-}
-const seqOfStones = (mods, stones) => mods.bomb ? explode(stones) : stones.map(st => st.color).join('');
+// ponytail: mods는 이제 안 쓰지만 부르는 곳이 많아 자리만 남겼다. 돌을 바꾸는 실험이 다시 생기면 여기서 처리한다.
+const seqOfStones = (mods, stones) => stones.map(st => st.color).join('');
 const handOf = (s, p, i) => {
   const stones = s.players[p].civs[i].stones;
   if (!stones.length) return null;
@@ -183,7 +202,7 @@ function handRange(s, owner, i, view) {
   return { best:all[0], worst:all.at(-1) };
 }
 
-// mods = { exp:실험 id 또는 'none', bag, bomb, cards }. 판 안에서는 s.mods[실험 id]가 true다.
+// mods = { exp:실험 id 또는 'none', bag, cards }. 판 안에서는 s.mods[실험 id]가 true다.
 function labNewGame(choice, rng = Math.random) {
   const mods = { ...choice, [choice.exp]:true };
   const deck = SPECIALS.map(name => [rng(), name]).sort((a, b) => a[0] - b[0]).map(([, name]) => name);
@@ -199,7 +218,7 @@ function labNewGame(choice, rng = Math.random) {
 }
 
 const cloneS = s => ({ ...copyState(s), shown:s.shown.map(a => [...a]),
-  fx:{ ...s.fx, blocked:[...s.fx.blocked], spoils:[...s.fx.spoils], used:[...s.fx.used], log:[...s.fx.log] } });
+  fx:{ ...s.fx, blocked:[...s.fx.blocked], spoils:[...s.fx.spoils], log:[...s.fx.log] } });
 // 최종 결전: 세 문명을 전선 1·2·3에 놓는 여섯 가지 순서. 7턴이면 어느 규칙에서든 모든 문명이 돌 7개다.
 const PERMS = [[0,1,2],[0,2,1],[1,0,2],[1,2,0],[2,0,1],[2,1,0]];
 const isFinal = s => s.mods.final && s.turn === LAST_TURN;
@@ -229,7 +248,7 @@ function resolve(s, a, b) {
   const seqs = picks.map((c, p) => c === null ? '' : seqOfStones(mods, s.players[p].civs[c].stones));
   if (!mods.fronts) picks.forEach((c, p) => { if (c !== null) s.players[p].civs[c].stones.forEach(st => { st.revealed = true; }); });
   const turned = h => h && s.fx.reverse ? { ...h, rank:1000 - h.rank, beats:0 } : h;
-  const winner = clash(turned(hands[0]), turned(hands[1])), gain = winner === null ? 0 : (pointsFor(t) + s.pot) * (s.fx.double ? 2 : 1) + (s.fx.spoils[winner] ? 1 : 0);
+  const winner = (mods.tree ? treeClash : clash)(turned(hands[0]), turned(hands[1])), gain = winner === null ? 0 : (pointsFor(t) + s.pot) * (s.fx.double ? 2 : 1) + (s.fx.spoils[winner] ? 1 : 0);
   if (winner !== null) { s.players[winner].score += gain; s.pot = 0; } else s.pot += pointsFor(t);
   if (!mods.fronts) picks.forEach((c, p) => { if (c !== null) s.players[p].civs[c].bannedThrough = t + (p === winner ? 2 : 1); });
   const effects = picks.map((c, p) => c === null ? null : useAbility(s, p, c, hands[p], winner, picks[1 - p], strongest(s, 1 - p, handOf))).filter(Boolean);
@@ -305,8 +324,8 @@ function moveValue(s, p, mv) {
     const stones = [...s.players[p].civs[c].stones, ...mv.filter(m => m[0] === c).map(m => stoneOf(m[1]))];
     if (!stones.length) return sum;
     const e = judge(s.mods, seqOfStones(s.mods, stones), s.players[p].cards);
-    if (s.mods.tree) return sum + e.power / 6;
-    return sum + 1 - (e.rank - 1) / (s.mods.shape ? SHAPES.length : TABLES[stones.length].length) + stones.length * 0.3;
+    if (s.mods.tree) return sum + e.power / 6 + (e.special ? 1 : 0);
+    return sum + 1 - (e.rank - 1) / TABLES[stones.length].length + stones.length * 0.3;
   }, 0);
 }
 function quickMove(s, p, rng) {
@@ -379,8 +398,9 @@ function labBotField(s, p, rng = Math.random) {
 // 카드 쓰기: 안 쓰는 경우보다 평균이 뚜렷이 좋은 사용만 고른다. stage는 'prep' 또는 'tactic'.
 // ponytail: 판을 끝까지 둘 때는 양쪽 다 카드를 안 쓴다고 본다. 가져올 카드도 희귀 우선으로 대충 고른다.
 function labBotCard(s, p, stage, rng = Math.random) {
-  const keep = stage === 'prep' ? (s.players[p].offer.find(c => CARDS[c].n === 1) ?? pickOf(s.players[p].offer, rng)) : undefined;
-  const hand = stage === 'prep' ? [...s.players[p].hand, keep] : s.players[p].hand;
+  const offer = stage === 'prep' ? s.players[p].offer : [];
+  const keep = offer.length ? (offer.find(c => CARDS[c].n === 1) ?? pickOf(offer, rng)) : undefined;
+  const hand = keep ? [...s.players[p].hand, keep] : s.players[p].hand;
   const step = stage === 'prep' ? labPrep : labTactic;
   const value = use => {
     let sum = 0;
@@ -400,8 +420,8 @@ function labBotCard(s, p, stage, rng = Math.random) {
 
 // 무작위 카드 행동. 자체 점검용.
 function randomAct(s, p, stage, rng) {
-  const keep = stage === 'prep' ? pickOf(s.players[p].offer, rng) : undefined;
-  const all = legalUses(s, p, stage, stage === 'prep' ? [...s.players[p].hand, keep] : s.players[p].hand);
+  const keep = stage === 'prep' && s.players[p].offer.length ? pickOf(s.players[p].offer, rng) : undefined;
+  const all = legalUses(s, p, stage, keep ? [...s.players[p].hand, keep] : s.players[p].hand);
   return { keep, use:all.length && rng() < 0.7 ? pickOf(all, rng) : null };
 }
 
@@ -410,8 +430,6 @@ function labSelfCheck() {
   const names = Object.values(TABLES).flat().filter(r => !r[4]).map(r => r[2]);
   Object.keys(ABILITY).forEach(n => eq(names.includes(n), true, `능력 족보 이름 ${n}`));
   const st = (color, kind = color) => ({ kind, color, revealed:kind !== 'G' });
-  eq(explode([st('B'), st('W'), st('W'), st('B', 'G'), st('W'), st('W')]), 'BBBBWW', '회색 폭발');
-  eq(explode([st('B', 'G'), st('W')]), 'BW', '양쪽에 같은 색이 없으면 그대로');
   eq(clash({ age:5, rank:9, beats:0 }, { age:4, rank:1, beats:0 }), 0, '앞선 시대가 이김');
   eq(clash(null, { age:1, rank:2, beats:0 }), 1, '돌 없는 문명은 짐');
   // 실험을 하나씩, 그리고 전부 켜고 무작위로 끝까지 둔다.
@@ -420,15 +438,25 @@ function labSelfCheck() {
   for (let i = 0; i < 200; i++) eq(drawStones(rng)[0].reduce((a, b) => a + b), 21, '뽑은 돌은 21개');
   // 돌 뽑기가 늘 켜져 있으니 돌 수가 중요한 점검은 재고를 고정한다.
   const full = (color, n = 7) => Array.from({ length:n }, () => st(color));
-  const game = (exp, rest = {}) => { const g = labNewGame({ exp, bag:false, bomb:false, cards:2, ...rest }, rng); g.players.forEach(pl => { if (!pl.bag) pl.stock = { B:7, W:7, GB:4, GW:3 }; }); return g; };
-  // 테크 트리: 어떤 순서로 둬도 노드가 있고, 모든 노드에 닿을 수 있다.
-  const reached = new Set();
-  for (let n = 1; n <= LAST_TURN; n++) { eq(TREE[n].length, n + 1, `테크 트리 돌 ${n}개 줄은 ${n + 1}칸`); fills('?'.repeat(n)).forEach(q => reached.add(n + ',' + treeHand(q).node)); }
-  eq(reached.size, TREE.slice(1).reduce((k, row) => k + row.length, 0), '테크 트리 노드는 모두 닿을 수 있음');
-  [['WWWWWWW','인터넷'],['BBBBBBB','핵무기'],['BBBBBBW','초강대국'],['WBWWWWW','인공지능'],['BWW','화폐'],['WB','족장']].forEach(([q, name]) => eq(treeHand(q).name, name, `테크 트리 ${q}`));
+  const game = (exp, rest = {}) => { const g = labNewGame({ exp, bag:false, cards:2, ...rest }, rng); g.players.forEach(pl => { if (!pl.bag) pl.stock = { B:7, W:7, GB:4, GW:3 }; }); return g; };
+  // 테크 트리: 자식은 한 칸 아래에 있고, 모든 노드에 닿을 수 있으며, 흑은 왼쪽이나 아래, 백은 오른쪽이나 아래로 간다.
+  Object.entries(TREE).forEach(([name, [d, x, , , bk, wt]]) => { if (d < LAST_TURN) [[bk, -1], [wt, 1]].forEach(([k, side]) => { eq(TREE[k]?.[0], d + 1, `${name} 자식 ${k}`); eq((TREE[k][1] - x) * side >= 0 || d === 0, true, `${name}에서 ${k}로 가는 방향`); }); });
+  const reached = new Set(['시작']);
+  for (let n = 1; n <= LAST_TURN; n++) fills('?'.repeat(n)).forEach(q => reached.add(treeWalk(q).at(-1)));
+  eq(reached.size, Object.keys(TREE).length, '테크 트리 노드는 모두 닿을 수 있음');
+  [['WWWWWWW','인터넷'],['BBBBBBB','핵무기'],['BBBBWBB','초강대국'],['BWW','화폐'],['WB','대장간'],['WBB','바퀴']].forEach(([q, name]) => eq(treeHand(q).name, name, `테크 트리 ${q}`));
+  eq(WONDERS.length, SPECIALS.length, '불가사의는 모두 쓰임');
+  WONDERS.forEach(x => eq(x.re.test(x.example) && countBlack(x.example) === x.b && x.example.length === x.d, true, `${x.name} 대표 순서`));
+  eq(treeHand('WBBB').special, false, '카드가 없으면 불가사의 없음');
+  const wall = treeHand('WBBB', ['만리장성']);
+  eq(wall.name === '만리장성' && wall.catch === 7, true, '카드가 있으면 그 순서에서 불가사의');
+  eq(treeClash(wall, treeHand('BBBB')), 0, '만리장성은 기사단을 잡음');
+  eq(treeClash(wall, treeHand('WWWWWWW')), 0, '불가사의는 돌이 더 많은 강자도 잡음');
+  eq(treeClash(wall, treeHand('BBW')), 0, '잡지 못하는 상대와는 힘으로 겨룸(4 대 3)');
+  eq(treeClash(treeHand('BBBBB'), treeHand('BBBB')), 1, '힘은 오르기만 하지 않음: 머스킷 부대 6은 기사단 7에 짐');
   const tg = game('tree');
   tg.players[0].civs[0].stones = full('B', 4); // 기사단, 힘 7
-  tg.players[1].civs[0].stones = [...'BWBBW'].map(c => st(c)); // 무역 회사, 힘 5
+  tg.players[1].civs[0].stones = [...'BWWWB'].map(c => st(c)); // 무역 회사, 힘 5
   eq(clash(handOf(tg, 0, 0), handOf(tg, 1, 0)), 0, '테크 트리: 돌이 적어도 힘이 세면 이김');
   // 점령은 이겼을 때 진 문명만 뒤집는다. 결전은 이긴 전선이 많은 쪽이 판돈을 가져간다.
   const cap = game('none');
@@ -443,9 +471,6 @@ function labSelfCheck() {
   const done = labFight(end, [0, 0]);
   eq(done.history[0].battles.map(b => b.winner).join(), ',0,', '전선별 승패');
   eq(done.players[0].score, 5, '결전 승자가 7턴 3점과 이월 2점을 가져감');
-  [['B','외길'],['BBBBBBB','외길'],['BW','교대'],['BWBWBWB','교대'],['BWWB','대칭'],['BBBWW','두 덩이'],['BBWBW','잡탕'],['BBBWB','외톨이'],['BBBBW','외톨이']]
-    .forEach(([q, name]) => eq(shapeHand(q).name, name, `모양 ${q}`));
-  for (let n = 4; n <= LAST_TURN; n++) for (let i = 0; i < n; i++) eq(shapeHand('B'.repeat(i) + 'W' + 'B'.repeat(n - 1 - i)).rank, SHAPES.length, '외길에서 한 돌 빗나가면 꼴찌');
   // 증강 카드 규칙.
   eq(DECK.length, 18, '증강 덱 18장');
   let h = game('augment');
@@ -453,10 +478,16 @@ function labSelfCheck() {
   h.players[0].offer = ['봉쇄', '신탁'];
   h = labPrep(h, [{ keep:'봉쇄', use:{ card:'봉쇄', civ:0, block:'B' } }, null]);
   eq(h.players[0].hand.length === 0 && h.players[0].deck.at(-1) === '신탁', true, '쓴 카드는 사라지고 안 고른 카드는 덱 아래로');
+  eq(h.stage, 'prep', '카드를 썼으면 준비 단계를 한 번 더');
+  h = labPrep(h, [null, null]);
+  eq(h.stage === 'assign' && h.players[0].deck.at(-1) === '신탁', true, '둘 다 안 쓰면 배치로, 카드는 다시 안 받음');
   eq(canMove(h, 1, [[0,'B'],[1,'W'],[2,'W']]), false, '봉쇄당한 돌은 못 받음');
   eq(canMove(h, 1, [[0,'W'],[1,'B'],[2,'B']]), true, '다른 돌은 받음');
   h = labPlace(h, [[[0,'B'],[1,'W'],[2,'B']], [[0,'W'],[1,'B'],[2,'W']]]);
   eq(h.stage, 'tactic', '배치 뒤 전술 단계');
+  h.players[0].hand = ['전리품', '총력전'];
+  const two = labTactic(labTactic(h, [{ use:{ card:'전리품' } }, null]), [{ use:{ card:'총력전' } }, null]);
+  eq(two.stage === 'tactic' && two.fx.spoils[0] && two.fx.double && !two.players[0].hand.length, true, '한 턴에 카드 여러 장');
   h.players[0].hand = ['시대 역행', '휴전'];
   eq(labFight(labTactic(h, [{ use:{ card:'시대 역행' } }, null]), [0, 0]).history[0].battles[0].winner, 1, '시대 역행은 순위를 뒤집음');
   let tr = labTactic(h, [{ use:{ card:'휴전' } }, null]);
@@ -475,7 +506,7 @@ function labSelfCheck() {
   for (let i = 0; i < 200; i++) eq(canMove(tight, 1, randomMove(tight, 1, rng)), true, '봉쇄돼도 무작위 배치는 합법');
   // 실험마다, 간단한 규칙을 얹고 안 얹고 무작위로 끝까지 둔다.
   for (const exp of ['none', ...EXPERIMENTS.map(m => m.id)]) for (const on of [false, true]) {
-    let g = labNewGame({ exp, bag:on, bomb:on, cards:2 }, rng);
+    let g = labNewGame({ exp, bag:on, cards:2 }, rng);
     while (!g.over) {
       if (g.stage === 'prep' || g.stage === 'tactic') g = (g.stage === 'prep' ? labPrep : labTactic)(g, [0, 1].map(p => randomAct(g, p, g.stage, rng)));
       else if (g.stage === 'assign') g = labPlace(g, [randomMove(g, 0, rng), randomMove(g, 1, rng)]);

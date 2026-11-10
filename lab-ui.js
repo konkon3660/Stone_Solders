@@ -2,7 +2,7 @@
 const app = document.getElementById('app');
 const sheet = document.getElementById('table-sheet');
 const LETTERS = 'ABC';
-const mods = { exp:'none', bag:false, bomb:false, cards:2 };
+const mods = { exp:'none', bag:false, cards:2 };
 let acts = [null, null], keepIdx = null;
 let s, mode, phase = 'start', viewer = 0, moves, fighters, pend = [], pick = null, tableTurn = 1, opened = false;
 
@@ -37,9 +37,6 @@ function stockHTML(p, view, picking = []) {
   return `<p class="stock"><span>${bag ? '뽑은 돌' : '남은 돌'}</span>${row(st)}${bag ? `<span>주머니</span>${row(left)}` : ''}</p>`;
 }
 
-const bombLine = (stones, owner, view) => s.mods.bomb && stones.some(st => st.kind === 'G') && !stones.some(st => isHidden(st, owner, view)) && seqOfStones(s.mods, stones) !== stones.map(st => st.color).join('')
-  ? `<p class="note">폭발 후 ${dotsOf(seqOfStones(s.mods, stones))}</p>` : '';
-
 function path(owner, i, view) {
   const stones = s.players[owner].civs[i].stones;
   if (!stones.length || (view !== owner && view !== 'all')) return '';
@@ -60,7 +57,7 @@ function civCard(owner, i, view) {
   return `<article class="card ${banned ? 'banned' : ''}">
     <div class="card-head"><strong>문명 ${LETTERS[i]}</strong>${banTag(civ)}</div>
     <div class="stones">${civ.stones.map(st => stoneHTML(st, owner, view)).join('') || '<span class="empty">돌 없음</span>'}</div>
-    ${bombLine(civ.stones, owner, view)}${path(owner, i, view)}
+    ${path(owner, i, view)}
     <div class="info">${info}</div>
   </article>`;
 }
@@ -93,11 +90,11 @@ function fightCard(i) {
   return `<article class="card ${pick === i ? 'selected' : legal ? '' : 'banned'}">
     <div class="card-head"><strong>문명 ${LETTERS[i]}</strong>${banTag(civ)}</div>
     <div class="stones">${civ.stones.map(st => stoneHTML(st, v, v)).join('') || '<span class="empty">돌 없음</span>'}</div>
-    ${bombLine(civ.stones, v, v)}${path(v, i, v)}
+    ${path(v, i, v)}
     ${e ? `<div class="hand-mini">${artImg(HAND_ART[e.name], 'thumb')}<div>
       <p class="hand">${eraTag(civ.stones.length)}${handLine(e)}</p>
       <p class="muted">${e.why}</p>
-      ${e.special ? `<p class="beats">${beatText(e.age, e.beats)}</p>` : fxLine(e.name, e.fx)}
+      ${e.special ? `<p class="beats">${s.mods.tree ? catchText(e) : beatText(e.age, e.beats)}</p>` : fxLine(e.name, e.fx)}
     </div></div>` : ''}
     <button class="fight" data-act="fight" data-i="${i}" aria-pressed="${pick === i}" ${legal ? '' : 'disabled'}>${label}</button>
   </article>`;
@@ -125,21 +122,19 @@ function useLabel(u) {
 }
 function useSelect(stage, hand) {
   const all = legalUses(s, viewer, stage, hand);
-  if (!all.length) return `<p class="muted">${s.fx.used[viewer] ? '이번 턴 카드를 이미 썼습니다.' : '지금 쓸 수 있는 카드가 없습니다.'}</p>`;
+  if (!all.length) return '<p class="muted">지금 쓸 수 있는 카드가 없습니다.</p>';
   return `<h2 class="sub">카드 쓰기</h2><select id="use" aria-label="쓸 카드"><option value="">쓰지 않음</option>${all.map((u, i) => `<option value="${i}">${useLabel(u)}</option>`).join('')}</select>`;
 }
 const handNow = v => phase === 'prep' && keepIdx !== null ? [...s.players[v].hand, s.players[v].offer[keepIdx]] : s.players[v].hand;
 
-const noCards = () => s.mods.shape || s.mods.tree;
 function cardsHTML(view) {
-  if (noCards()) return '';
   const shown = s.shown[1 - view];
   const card = name => {
     const t = specialTurn(name), row = TABLES[t].find(r => r[2] === name);
     return `<article class="sp-card">${artImg(HAND_ART[name], 'thumb')}<div>
       <p class="hand-title"><b class="rank">돌 ${t}개</b> <strong>${name}</strong> <span class="star">★</span></p>
       <div class="hand-shape">${shapeDots(row[5])}</div>
-      <p class="beats">${beatText(t, row[6] ?? 1)}</p>
+      <p class="beats">${s.mods.tree ? catchText(WONDERS.find(x => x.name === name)) + '. 지도의 ★ 자리' : beatText(t, row[6] ?? 1)}</p>
     </div></article>`;
   };
   return `<h2 class="sub">내 불가사의 카드 · 상대는 모름</h2>
@@ -147,48 +142,49 @@ function cardsHTML(view) {
     <p class="muted">${nameOf(1 - view)} 카드 ${s.mods.cards}장: ${shown.length ? `${shown.join(', ')} 공개` : '모두 비공개'}</p>`;
 }
 
-// 테크 트리 지도: 삼각형. 줄은 돌 개수, 흑 가지는 왼쪽 아래, 백 가지는 오른쪽 아래. marks['돌 개수,백돌 개수'] = 그 노드에 있는 내 문명 글자.
+// 테크 트리 지도. 줄은 돌 개수, 흑 가지는 왼쪽이나 아래, 백 가지는 오른쪽이나 아래. marks[노드 이름] = 그 노드에 있는 내 문명 글자.
 const FX_SHORT = { peek:'엿보기', break:'뒤집기', capture:'점령', lock:'출전 금지', rest:'안 쉼' };
 const fxShort = fx => !fx ? '' : fx[0] === 'score' ? `승점 +${fx[1]}` : fx[1] ? `${FX_SHORT[fx[0]]} ${fx[1]}` : FX_SHORT[fx[0]];
+const catchText = e => `힘 ${e.catch} 이상인 문명을 잡는다`;
 function treeMarks(v, withPend) {
   const marks = {};
   if (v === null) return marks;
   s.players[v].civs.forEach((civ, i) => {
     const stones = [...civ.stones, ...(withPend ? pend.filter(m => m[0] === i).map(m => stoneOf(m[1])) : [])];
-    if (stones.length) (marks[stones.length + ',' + treeHand(seqOfStones(s.mods, stones)).node] ??= []).push(LETTERS[i]);
+    if (stones.length) (marks[treeHand(seqOfStones(s.mods, stones)).node] ??= []).push(LETTERS[i]);
   });
   return marks;
 }
-function treeMap(marks) {
-  const DX = 64, DY = 78, NW = 60, NH = 50, W = 8 * DX + 8, H = 40 + 6 * DY + NH + 6;
-  const at = (d, k) => [W / 2 + (k - d / 2) * DX, 40 + (d - 1) * DY]; // 노드 가운데 x, 위쪽 y
-  const here = new Set(Object.keys(marks)), next = new Set([...here].flatMap(key => { const [d, k] = key.split(',').map(Number); return d < LAST_TURN ? [`${d + 1},${k}`, `${d + 1},${k + 1}`] : []; }));
-  const edge = (x1, y1, d, k, c, hot) => {
-    const [x2, y2] = at(d, k), mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
-    return `<g class="edge ${c === 'B' ? 'eb' : 'ew'}${hot ? ' hot' : ''}"><line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"/><circle cx="${mx}" cy="${my}" r="4.5"/></g>`;
-  };
-  let edges = edge(W / 2, 28, 1, 0, 'B', !here.size) + edge(W / 2, 28, 1, 1, 'W', !here.size), nodes = '<circle class="root" cx="' + W / 2 + '" cy="16" r="12"/><text class="root-t" x="' + W / 2 + '" y="20">시작</text>';
-  for (let d = 1; d <= LAST_TURN; d++) for (let k = 0; k <= d; k++) {
-    const [x, y] = at(d, k), [name, power, fx, story] = TREE[d][k], key = `${d},${k}`, hot = here.has(key);
-    if (d < LAST_TURN) edges += edge(x, y + NH, d + 1, k, 'B', hot) + edge(x, y + NH, d + 1, k + 1, 'W', hot);
+// cards: 내 불가사의 카드. 대표 순서로 닿는 노드 밑에 별을 찍는다.
+function treeMap(marks, cards = []) {
+  const DX = 70, DY = 80, NW = 62, NH = 50, W = 7 * DX + 8, H = 40 + 6 * DY + NH + 18;
+  const at = name => { const [d, x] = TREE[name]; return [4 + DX / 2 + x * DX, d ? 40 + (d - 1) * DY : 4]; }; // 가운데 x, 위쪽 y
+  const here = new Set(Object.keys(marks)), next = new Set([...here].flatMap(n => TREE[n][0] < LAST_TURN ? [TREE[n][4], TREE[n][5]] : []));
+  const stars = {};
+  cards.forEach(c => { const wd = WONDERS.find(x => x.name === c); if (wd) (stars[treeWalk(wd.example).at(-1)] ??= []).push(c); });
+  const stone = (cx, cy, c) => `<circle class="${c === 'B' ? 'sb' : 'sw'}" cx="${cx}" cy="${cy}" r="4.5"/>`;
+  let edges = '', nodes = '';
+  for (const [name, [d, , power, fx, bk, wt, story]] of Object.entries(TREE)) {
+    const [x, y] = at(name), hot = here.has(name) || (!d && !here.size), bottom = d ? y + NH : 28;
+    if (d < LAST_TURN) for (const [k, c] of bk === wt ? [[bk, 'BW']] : [[bk, 'B'], [wt, 'W']]) {
+      const [x2, y2] = at(k), mx = (x + x2) / 2, my = (bottom + y2) / 2;
+      edges += `<g class="edge ${c === 'B' ? 'eb' : c === 'W' ? 'ew' : 'ebw'}${hot ? ' hot' : ''}"><line x1="${x}" y1="${bottom}" x2="${x2}" y2="${y2}"/>${c === 'BW' ? stone(mx - 5, my, 'B') + stone(mx + 5, my, 'W') : stone(mx, my, c)}</g>`;
+    }
+    if (!d) { nodes += `<circle class="root" cx="${x}" cy="16" r="12"/><text class="root-t" x="${x}" y="20">시작</text>`; continue; }
     const lines = [...name.split(' ').map(t => ['n', t]), ['p', `힘 ${power}`], ...(fx ? [['f', fxShort(fx)]] : [])];
-    const y0 = y + (NH - lines.length * 11.5) / 2 + 9;
-    nodes += `<g class="node${hot ? ' here' : next.has(key) ? ' next' : ''}"><title>${name}: ${story}</title><rect x="${x - NW / 2}" y="${y}" width="${NW}" height="${NH}" rx="6"/>
+    const y0 = y + (NH - lines.length * 11.5) / 2 + 9, mine = here.has(name);
+    nodes += `<g class="node${mine ? ' here' : next.has(name) ? ' next' : ''}${bk === wt && d < LAST_TURN ? ' one-way' : ''}"><title>${name}: ${story}${bk === wt && d < LAST_TURN ? ' (외길: 어느 색을 놓아도 ' + bk + ')' : ''}</title><rect x="${x - NW / 2}" y="${y}" width="${NW}" height="${NH}" rx="6"/>
       ${lines.map(([c, t], i) => `<text class="t${c}" x="${x}" y="${y0 + i * 11.5}">${t}</text>`).join('')}
-      ${hot ? `<rect class="badge" x="${x - NW / 2}" y="${y - 13}" width="${NW}" height="12" rx="3"/><text class="tb" x="${x}" y="${y - 4}">${marks[key].join(' ')}</text>` : ''}</g>`;
+      ${mine ? `<rect class="badge" x="${x - NW / 2}" y="${y - 13}" width="${NW}" height="12" rx="3"/><text class="tb" x="${x}" y="${y - 4}">${marks[name].join(' ')}</text>` : ''}
+      ${stars[name] ? `<text class="ts" x="${x}" y="${y + NH + 10}">★ ${stars[name].join(' ★ ')}</text>` : ''}</g>`;
   }
   return `<div class="tree-wrap"><svg class="tree-svg${here.size ? ' marked' : ''}" viewBox="0 0 ${W} ${H}" role="img" aria-label="테크 트리 지도">${edges}${nodes}</svg></div>
-    <p class="legend">흑을 놓으면 왼쪽 아래, 백을 놓으면 오른쪽 아래로 갑니다. 가지는 이웃 가지와 합쳐집니다. 금색이 내 문명 위치, 점선이 다음에 갈 수 있는 곳입니다. 힘이 센 쪽이 이기고, 같으면 무승부입니다. 노드에 마우스를 올리면 이야기가 보입니다.</p>`;
+    <p class="legend">흑을 놓으면 흑돌 선을, 백을 놓으면 백돌 선을 따라 한 칸 내려갑니다. 흑은 늘 왼쪽이나 아래, 백은 오른쪽이나 아래입니다. 가지는 갈라지고 합쳐지며, 흑백 돌이 함께 그려진 선은 어느 색을 놓아도 가는 외길입니다. 금색이 내 문명 위치, 점선이 다음에 갈 수 있는 곳, ★은 내 불가사의 카드를 그 순서로 놓으면 바뀌는 자리입니다. 힘이 센 쪽이 이기고, 같으면 무승부입니다. 노드에 마우스를 올리면 이야기가 보입니다.</p>`;
 }
 
 function tableHTML() {
-  if (s.mods.shape) return `<div class="hand-head"><h2>모양 족보</h2></div>
-    <ol class="hand-list">${SHAPES.map(([name, why, ex], i) => `<li class="hand-row"><div class="hand-body">
-      <div class="hand-title">${rankTag(i + 1)} <strong>${name}</strong></div><div class="hand-shape">${dotsOf(ex)}</div><p class="why">${why}</p>
-    </div></li>`).join('')}</ol>
-    <p class="legend">돌을 받은 순서까지 봅니다. 위가 강하고 같은 족보끼리는 무승부. 일곱 턴 내내 같은 표입니다.</p>`;
   const t = tableTurn, me = secretOwner(), mine = me === null ? [] : s.players[me].cards;
-  if (s.mods.tree) return `<div class="hand-head"><h2>테크 트리</h2></div>${treeMap(treeMarks(me, phase === 'assign'))}`;
+  if (s.mods.tree) return `<div class="hand-head"><h2>테크 트리</h2></div>${treeMap(treeMarks(me, phase === 'assign'), mine)}`;
   const tabs = `<div class="tabs">${Object.keys(TABLES).map(u => `<button class="tab" data-act="tableTab" data-t="${u}" aria-pressed="${Number(u) === t}" aria-label="돌 ${u}개 족보">${u}</button>`).join('')}</div>`;
   const row = (r, i) => `<li class="hand-row ${r[4] ? 'special' : ''}">
       ${artImg(HAND_ART[r[2]], 'thumb')}
@@ -217,7 +213,7 @@ function hud(now) {
     return `<li class="pip ${t === now ? 'now' : ''} ${h && h.winner !== null && mode !== 'hotseat' ? (h.winner === viewer ? 'win' : 'lose') : ''}">${t}턴<b>${tag}</b></li>`;
   }).join('');
   const on = [...EXPERIMENTS, ...ADDONS].filter(m => s.mods[m.id]).map(m => m.name);
-  const tags = [on.length ? on.join(' · ') : '본 게임 규칙', ...(noCards() ? [] : [`불가사의 ${s.mods.cards}장`])].join(' · ');
+  const tags = [on.length ? on.join(' · ') : '본 게임 규칙', `불가사의 ${s.mods.cards}장`].join(' · ');
   return `<header class="hud"><div class="score">${nameOf(0)} <b>${s.players[0].score}</b>점 : <b>${s.players[1].score}</b>점 ${nameOf(1)}</div><ol class="pips">${pips}</ol></header>
     <p class="on-mods">실험실: ${tags}${s.pot ? ` · 이월 ${s.pot}점` : ''}</p>`;
 }
@@ -233,7 +229,7 @@ function reason(b) {
   if (b.reversed) return '시대 역행으로 순위가 거꾸로 적용됨';
   const w = b.hands[b.winner], l = b.hands[1 - b.winner];
   if (!l) return '상대 문명이 없어 승리';
-  if (s.mods.tree) return `힘 ${w.power} 대 ${l.power}로 이김`;
+  if (s.mods.tree) return w.special && l.power >= w.catch ? `★ ${w.name}: 힘 ${w.catch} 이상인 강자를 잡음` : `힘 ${w.power} 대 ${l.power}로 이김`;
   if (w.age !== l.age) return '더 앞선 시대가 이김';
   if (w.special && l.rank <= w.beats) return `★ ${w.name}${eul(w.name) === '을' ? '이' : '가'} 상위 족보를 잡음`;
   return `${w.rank}위가 ${l.rank}위를 이김`;
@@ -246,7 +242,7 @@ function battleHTML(b, idx, view) {
     return `<article class="card duel-card ${b.winner === p ? 'winner' : ''}">${art}
       <div class="card-head"><strong>${nameOf(p)}${b.fighters[p] === null ? '' : ` · 문명 ${LETTERS[b.fighters[p]]}`}</strong><span class="tag">${b.winner === p ? '승리' : b.winner === null ? '무승부' : '패배'}</span></div>
       <p class="hand-big">${!e ? '출전 없음' : known(p) ? eraTag(e.age) + handLine(e) : '비공개'}</p>
-      ${e && known(p) ? `${e.special ? `<p class="beats">카드 공개 · ${beatText(e.age, e.beats)}</p>` : ''}<p>${dotsOf(b.seqs[p])}</p><p class="muted">${e.why}</p>` : ''}
+      ${e && known(p) ? `${e.special ? `<p class="beats">카드 공개 · ${s.mods.tree ? catchText(e) : beatText(e.age, e.beats)}</p>` : ''}<p>${dotsOf(b.seqs[p])}</p><p class="muted">${e.why}</p>` : ''}
     </article>`;
   };
   return `${s.mods.fronts || b.final ? `<h2 class="lane">전선 ${b.final ? idx + 1 : LETTERS[idx]}${b.winner === null || b.final ? '' : ` · ${nameOf(b.winner)} +${b.gain}점`}</h2>` : `<p class="reason">${reason(b)}</p>`}
@@ -285,21 +281,21 @@ const screens = {
     <p class="muted">본 게임 규칙은 늘 켜져 있습니다: 돌 뽑기, 테크 러시, 테크 능력, 무승부 이월, 불가사의 카드, 출전 제한. 봇은 켠 규칙을 모두 쓰지만 약합니다.</p>`,
 
   prep: () => {
-    const v = viewer, t = s.turn, me = s.players[v];
+    const v = viewer, t = s.turn, me = s.players[v], choosing = me.offer.length > 0;
     const offers = me.offer.map((name, i) => `<button class="pick offer" data-act="keep" data-i="${i}" aria-pressed="${keepIdx === i}"><span class="labels"><small>${CARDS[name].stage === 'prep' ? '준비' : '전술'}${CARDS[name].n === 1 ? ' · 희귀' : ''}</small><span class="name">${name}</span><small>${CARDS[name].text}</small></span></button>`).join('');
-    return `${hud(t)}${eraBanner(t)}${layout(`<h2 class="act">증강 카드 고르기</h2>
-      <p class="muted">2장 중 1장을 손패로 가져옵니다. 손패는 3장까지, 넘치면 가장 오래된 카드를 버립니다.</p>
-      <div class="picks two">${offers}</div>
-      ${keepIdx === null ? '' : useSelect('prep', handNow(v))}
+    return `${hud(t)}${eraBanner(t)}${layout(`<h2 class="act">${choosing ? '증강 카드 고르기' : '준비 카드 더 쓰기'}</h2>
+      <p class="muted">${choosing ? '2장 중 1장을 손패로 가져옵니다. 손패는 3장까지, 넘치면 가장 오래된 카드를 버립니다. ' : ''}카드는 제한 없이 씁니다. 한 장씩 동시에 공개하고, 둘 다 안 쓰면 돌 배치로 넘어갑니다.</p>
+      ${choosing ? `<div class="picks two">${offers}</div>` : ''}
+      ${choosing && keepIdx === null ? '' : useSelect('prep', handNow(v))}
       ${me.hand.length ? `<h2 class="sub">손패</h2><div class="sp-cards">${me.hand.map(augCard).join('')}</div>` : ''}
       ${myCards(v)}${foeCards(v)}${historyHTML()}`,
-      `<div class="actionbar">${tableButton}<button class="primary" data-act="confirmCard" ${keepIdx === null ? 'disabled' : ''}>확정</button></div>`)}`;
+      `<div class="actionbar">${tableButton}<button class="primary" data-act="confirmCard" ${choosing && keepIdx === null ? 'disabled' : ''}>확정</button></div>`)}`;
   },
 
   tactic: () => {
     const v = viewer, t = s.turn, hand = s.players[v].hand;
     return `${hud(t)}${eraBanner(t)}${layout(`<h2 class="act">전술 카드</h2>
-      <p class="muted">양쪽 배치가 공개됐습니다. 이번 턴 카드를 쓰지 않았다면 전술 카드를 쓸 수 있습니다.</p>
+      <p class="muted">양쪽 배치가 공개됐습니다. 전술 카드를 제한 없이 씁니다. 한 장씩 동시에 공개하고, 둘 다 안 쓰면 출전으로 넘어갑니다.</p>
       ${useSelect('tactic', hand)}
       ${hand.length ? `<h2 class="sub">손패</h2><div class="sp-cards">${hand.map(augCard).join('')}</div>` : ''}
       ${myCards(v)}${foeCards(v)}${historyHTML()}`,
@@ -313,7 +309,7 @@ const screens = {
     return `${hud(t)}${eraBanner(t)}${layout(`<h2 class="act">돌 나눠 주기</h2>
       <p class="muted">${s.mods.bag ? '주머니에서 꺼낸' : ''} 돌 3개를 아무 문명에나 줍니다. ${pend.length}/3개.</p>
       ${stockHTML(v, v, pend)}
-      ${s.mods.tree ? `<div class="only-phone">${treeMap(treeMarks(v, true))}</div>` : ''}
+      ${s.mods.tree ? `<div class="only-phone">${treeMap(treeMarks(v, true), s.players[v].cards)}</div>` : ''}
       <div class="cards mine">${[0,1,2].map(assignCard).join('')}</div>
       ${cardsHTML(v)}${foeCards(v)}${historyHTML()}`,
       `<div class="actionbar">${tableButton}<button data-act="undo" ${pend.length ? '' : 'disabled'}>하나 취소</button><button class="primary" data-act="confirmAssign" ${ok ? '' : 'disabled'}>돌 배치 확정</button></div>`)}`;
@@ -343,7 +339,7 @@ const screens = {
     const [a, b] = s.players.map(p => p.score), w = winnerOf(s);
     return `<section class="era">${artImg(ERA_ART[7])}<div class="era-text"><h1>${w === null ? '무승부' : `${nameOf(w)} 승리`}</h1><p class="score">${nameOf(0)} ${a}점 : ${b}점 ${nameOf(1)}</p></div></section>
       <p class="bar"><button class="primary" data-act="start" data-mode="${mode}">같은 실험 다시</button><button data-act="home">실험 바꾸기</button></p>
-      <p class="muted" ${noCards() ? 'hidden' : ''}>불가사의 카드 · ${[0, 1].map(p => `${nameOf(p)}: ${s.players[p].cards.join(', ')}`).join(' · ')}</p>
+      <p class="muted">불가사의 카드 · ${[0, 1].map(p => `${nameOf(p)}: ${s.players[p].cards.join(', ')}`).join(' · ')}</p>
       <p class="muted">뽑은 돌 · ${[0, 1].map(p => `${nameOf(p)}: 흑 ${s.players[p].drawn[0]} 백 ${s.players[p].drawn[1]} 회색 ${s.players[p].drawn[2]}${s.players[p].jackpot ? ' (대박)' : ''}`).join(' · ')}</p>
       <h2 class="sub">${nameOf(0)} 문명</h2><div class="cards">${[0,1,2].map(i => civCard(0, i, 'all')).join('')}</div>
       <h2 class="sub">${nameOf(1)} 문명</h2><div class="cards">${[0,1,2].map(i => civCard(1, i, 'all')).join('')}</div>${historyHTML(true)}`;

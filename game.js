@@ -264,8 +264,11 @@ function winnerOf(s) {
 }
 
 // ---------- 봇: 공개 정보로 판을 상상해 끝까지 둬 보고 평균이 좋은 수를 고른다 ----------
-// ponytail: 규칙을 모르는 몬테카를로라 수읽기는 얕다. 더 강한 봇이 필요하면 러시 전용 평가를 넣는다.
-const BOT_TRIES = { moves:48, K:6 };
+// ponytail: 규칙을 모르는 몬테카를로라 수읽기는 얕다. 96×10보다 늘려도 거의 안 세진다(시뮬 54%). 더 세게 하려면 러시 전용 평가를 넣는다.
+// 난이도. moves: 따져 볼 배치 후보 수, K: 후보마다 끝까지 둬 보는 판 수. 0이면 수읽기 없이 눈앞의 최선만 둔다.
+// 시뮬 200판: 보통이 쉬움에 83%, 어려움이 보통에 71% 이긴다.
+const BOT_LEVELS = { easy:{ name:'쉬움', moves:0, K:0 }, normal:{ name:'보통', moves:16, K:2 }, hard:{ name:'어려움', moves:96, K:10 } };
+const BOT_TRIES = { ...BOT_LEVELS.normal };
 const pickFrom = (a, rng) => a[Math.floor(rng() * a.length)];
 
 function botRandomMove(s, p, rng) {
@@ -289,11 +292,15 @@ function botQuickMove(s, p, rng) {
   for (let i = 0; i < 3; i++) { const mv = botRandomMove(s, p, rng), v = botMoveValue(s, p, mv); if (v > bv) { bv = v; best = mv; } }
   return best;
 }
+// 앞선 시대, 그다음 높은 순위. 러시에서는 돌 개수가 먼저라 순위만 보면 판을 잘못 읽는다.
+const botBestField = (s, p, legal) => {
+  const key = i => { const h = civHand(s, p, i); return h.age * 100 - h.rank; };
+  return legal.reduce((a, b) => key(b) > key(a) ? b : a);
+};
 function botQuickField(s, p, rng) {
   const legal = legalFighters(s, p);
   if (!legal.length) return null;
-  if (rng() < 0.3) return pickFrom(legal, rng);
-  return legal.reduce((a, b) => civHand(s, p, b).rank < civHand(s, p, a).rank ? b : a);
+  return rng() < 0.3 ? pickFrom(legal, rng) : botBestField(s, p, legal);
 }
 function botPlayout(s, rng) {
   while (!s.over) s = s.stage === 'assign'
@@ -315,6 +322,7 @@ function botImagine(s, p, rng) {
 }
 
 function botAssign(s, p, rng = Math.random) {
+  if (!BOT_TRIES.moves) return botQuickMove(s, p, rng);
   const all = Array.from({ length:BOT_TRIES.moves }, () => botRandomMove(s, p, rng));
   let best = all[0], bv = -Infinity;
   for (const mv of all) {
@@ -332,6 +340,7 @@ function botAssign(s, p, rng = Math.random) {
 function botFight(s, p, rng = Math.random) {
   const legal = legalFighters(s, p);
   if (legal.length < 2) return legal[0] ?? null;
+  if (!BOT_TRIES.K) return botBestField(s, p, legal);
   let best = legal[0], bv = -Infinity;
   for (const c of legal) {
     let sum = 0;

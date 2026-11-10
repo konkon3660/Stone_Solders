@@ -38,9 +38,13 @@
 .tree-svg .edge line { stroke-width: 2; }
 .tree-svg .eb line { stroke: #6c757b; }
 .tree-svg .ew line { stroke: #cfccc4; }
+.tree-svg .ebw line { stroke: #9aa1a5; stroke-dasharray: 6 3; }
 .tree-svg .edge circle { stroke: #8a9298; stroke-width: 1; }
-.tree-svg .eb circle { fill: #0b0d0e; }
-.tree-svg .ew circle { fill: #f2f0ea; }
+.tree-svg .sb { fill: #0b0d0e; }
+.tree-svg .sw { fill: #f2f0ea; }
+.tree-svg .ts { fill: var(--special); font-size: 9.5px; font-weight: 700; }
+.tree-svg .node.one-way rect { stroke-dasharray: 2 2; }
+.tree-svg .node.here.one-way rect { stroke-dasharray: none; }
 .tree-svg.marked .edge { opacity: .35; }
 .tree-svg.marked .edge.hot { opacity: 1; }
 .tree-svg.marked .edge.hot line { stroke-width: 3.5; }
