@@ -31,7 +31,7 @@ function hostAdvance() {
     sendState();
     if (phase === 'waiting') enterStage();
   } else if (s.stage === 'fight' && fighters[0] !== null && fighters[1] !== null) {
-    s = fightTurn(s, fighters);
+    s = fightTurn(s, fighters.map(f => f === 'none' ? null : f));
     assigns = [null, null];
     fighters = [null, null];
     sendState();
@@ -40,9 +40,9 @@ function hostAdvance() {
 }
 
 function onGuestMove(msg) {
-  const validAssign = canPlace(s.players[1].stock, msg?.assign);
+  const validAssign = canPlace(s.players[1], msg?.assign), noFighter = msg?.fighter === null && !legalFighters(s, 1).length;
   if (msg?.type === 'assign' && !s.over && s.stage === 'assign' && validAssign) assigns[1] = msg.assign;
-  else if (msg?.type === 'fight' && !s.over && s.stage === 'fight' && legalFighters(s, 1).includes(msg.fighter)) fighters[1] = msg.fighter;
+  else if (msg?.type === 'fight' && !s.over && s.stage === 'fight' && (noFighter || legalFighters(s, 1).includes(msg.fighter))) fighters[1] = msg.fighter ?? 'none';
   else return;
   hostAdvance();
   render();
@@ -64,7 +64,7 @@ function openRoom() {
     conn.on('open', () => {
       net.lost = false;
       sendState();
-      if (phase === 'lobby') enterStage();
+      if (phase === 'lobby') showDraw();
       render();
     });
     conn.on('data', msg => { if (net?.conn === conn) onGuestMove(msg); });
@@ -73,10 +73,11 @@ function openRoom() {
 }
 
 function receiveState(next) {
-  next.history.forEach(h => { h.hands = h.seqs.map((q, p) => evaluate(h.turn, q, next.players[p].cards)); });
+  next.history.forEach(h => { h.hands = h.seqs.map((q, p) => q ? { ...evaluate(q.length, q, next.players[p].cards), age:q.length } : null); });
   const prev = s;
   s = next;
-  if (!prev || next.history.length < prev.history.length || (phase === 'waiting' && next.history.length === prev.history.length)) enterStage();
+  if (!prev || next.history.length < prev.history.length) { if (next.turn === 1 && next.stage === 'assign') showDraw(); else enterStage(); }
+  else if (phase === 'waiting' && next.history.length === prev.history.length) enterStage();
   else if (next.history.length > prev.history.length) phase = 'result';
   render();
 }
@@ -104,6 +105,6 @@ function submitOnline(type, value) {
     if (net.conn?.open) net.conn.send(type === 'assign' ? { type, assign:value } : { type, fighter:value });
     return;
   }
-  if (type === 'assign') assigns[0] = value; else fighters[0] = value;
+  if (type === 'assign') assigns[0] = value; else fighters[0] = value ?? 'none';
   hostAdvance();
 }

@@ -10,6 +10,8 @@ const SCRIPT = [
   { mine:['W','W','W'], foe:['W','W','B'], field:0, foeField:2 },
 ];
 
+const spread = tokens => tokens.map((k, c) => [c, k]);
+
 function setup() {
   const g = newGame(() => 0.9);
   g.players[0].cards = ['마그나 카르타', '아폴로 계획'];
@@ -20,14 +22,14 @@ function setup() {
 }
 
 (function checkScript() {
-  const g = SCRIPT.reduce((now, t) => fightTurn(placeStones(now, [t.mine, t.foe]), [t.field, t.foeField]), setup());
+  const g = SCRIPT.reduce((now, t) => fightTurn(placeStones(now, [spread(t.mine), spread(t.foe)]), [t.field, t.foeField]), setup());
   const seen = g.history.map(h => `${h.hands[0].name}/${h.hands[1].name}`).join();
   if (seen !== '돌창/돌창,농경/청동검,법전/전차,마그나 카르타/기사단' || g.players[0].score !== 5) throw new Error('튜토리얼 대본이 규칙과 어긋남');
 })();
 
 const STEPS = [
   { kind:'info', title:'문명 대전', say:`돌을 쌓아 문명 셋을 키우고, 매 턴 그중 하나를 내보내 상대와 겨룹니다.</p><p>일곱 턴 동안 승리 점수를 더 많이 모으면 이깁니다. 천천히 네 턴만 같이 해 봅시다.` },
-  { kind:'info', title:'돌', say:`돌은 21개입니다. 흑 7, 백 7, 회색 7.</p><p>매 턴 문명 셋에 돌을 하나씩 줍니다. 색은 내 마음대로 고릅니다. 회색돌은 속이 흑이나 백인데, 그 색은 나만 압니다.` },
+  { kind:'info', title:'돌', say:`판마다 돌 21개를 무작위로 뽑습니다. 보통 흑, 백, 회색이 고르게 나오고, 가끔 흑이나 백이 17개 쏠린 대박이 나옵니다. 이번 판은 흑 7, 백 7, 회색 7입니다.</p><p>매 턴 돌 3개를 문명들에 줍니다. 회색돌은 속이 흑이나 백인데, 그 색은 나만 압니다. 지금은 문명마다 하나씩 놓아 봅시다.` },
   { kind:'place', turn:0, title:'1턴: 돌 놓기', say:`문명마다 돌을 놓아 보세요. 버튼에 놓은 뒤의 족보가 미리 보입니다.</p><p>돌의 조합이 곧 그 문명의 족보입니다. 1턴에는 흑 하나인 돌창이 1위, 백 하나인 불이 2위입니다.` },
   { kind:'fight', turn:0, title:'1턴: 출전', say:`양쪽 돌이 동시에 공개됐습니다. 이제 싸울 문명 하나를 비밀로 고릅니다.</p><p>돌창인 문명 B를 내보내세요.` },
   { kind:'result', title:'1턴: 무승부', say:`같은 돌창이라 비겼습니다. 비기면 이번 턴 점수가 사라지지 않고 다음 승부에 얹힙니다.</p><p>출전한 문명은 쉬어야 합니다. 문명 B에 붙은 출전 제한을 보세요.` },
@@ -40,6 +42,8 @@ const STEPS = [
   { kind:'place', turn:3, card:'마그나 카르타', title:'4턴: 불가사의 카드', say:`게임을 시작할 때 불가사의 카드 2장을 비밀로 받습니다. 카드에 적힌 순서대로 돌을 쌓으면 나만 완성할 수 있습니다.</p><p>문명 A는 지금까지 백·흑·흑입니다. 백돌을 하나 더 놓으면 마그나 카르타입니다.` },
   { kind:'fight', turn:3, title:'4턴: 출전', say:`문명 B와 C는 쉬는 중입니다. 상대에게 4턴 1위 기사단이 보이지만, 문명 A를 내보내세요.` },
   { kind:'result', title:'4턴: 대역전', say:`★ 마그나 카르타는 3위지만 1위 기사단을 잡습니다. 4턴 점수 2점을 얻었습니다.</p><p>다만 전투에 쓴 카드는 공개되어 다음부터 상대가 대비합니다.` },
+  { kind:'info', title:'테크 러시', say:`지금까지는 문명마다 돌을 하나씩 놓았습니다. 실제 게임에서는 돌 3개를 한 문명에 몰아줘도 됩니다.</p><p>돌 개수가 그 문명의 시대이고, 돌이 많은 문명이 무조건 이깁니다. 대신 나머지 문명은 뒤처지고, 출전한 문명은 쉬어야 합니다.` },
+  { kind:'info', title:'테크 능력', say:`1위가 아닌 족보로 출전하면 전투 뒤 능력이 발동합니다. 약한 족보일수록 능력이 셉니다.</p><p>승점을 얻거나, 상대 회색돌을 공개하거나, 상대 돌을 뒤집습니다. 전차 같은 군사 테크는 이기면 진 문명의 마지막 돌을 뒤집습니다. 족보표에서 능력을 확인하세요.` },
   { kind:'done', title:'이제 직접 해 보세요', say:`알아 둘 것은 이것뿐입니다.` },
 ];
 
@@ -120,8 +124,10 @@ function barHTML(cur) {
 }
 
 const DONE_LIST = `<ol class="rules">
-  <li>매 턴 문명 셋에 돌을 하나씩 주고, 문명 하나를 내보냅니다.</li>
-  <li>족보표 위쪽일수록 강합니다. 같은 족보면 비기고, 점수는 다음 승부에 얹힙니다.</li>
+  <li>매 턴 돌 3개를 문명들에 주고, 문명 하나를 내보냅니다. 돌을 몰아줘도 됩니다.</li>
+  <li>돌이 많은 문명이 무조건 이깁니다. 돌 21개는 판마다 무작위로 뽑습니다.</li>
+  <li>돌 개수가 같으면 족보표 위쪽일수록 강합니다. 같은 족보면 비기고, 점수는 다음 승부에 얹힙니다.</li>
+  <li>1위가 아닌 족보로 출전하면 테크 능력이 발동합니다.</li>
   <li>이긴 문명은 2턴, 지거나 비긴 문명은 1턴 쉽니다.</li>
   <li>승리 점수는 1~3턴 1점, 4~6턴 2점, 7턴 3점입니다. 동점이면 마지막 전투 승자가 이깁니다.</li>
   <li>회색돌로 족보를 숨기고, 불가사의 카드로 상위 족보를 잡으세요.</li>
@@ -145,7 +151,7 @@ const actions = {
   next() { advance(); },
   back() { ({ s, pend } = past.pop()); step--; },
   place({ i }) { const c = Number(i); pend = pend.includes(c) ? pend.filter(x => x !== c) : [...pend, c]; },
-  confirm() { const t = SCRIPT[STEPS[step].turn], before = s; advance(); s = placeStones(before, [t.mine, t.foe]); },
+  confirm() { const t = SCRIPT[STEPS[step].turn], before = s; advance(); s = placeStones(before, [spread(t.mine), spread(t.foe)]); },
   field() { const t = SCRIPT[STEPS[step].turn], before = s; advance(); s = fightTurn(before, [t.field, t.foeField]); },
 };
 

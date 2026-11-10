@@ -13,26 +13,9 @@ const MODS = [
   { id:'bomb', name:'회색 폭발', desc:'회색돌이 같은 색 돌 사이에 낀 돌을 뒤집는다. 족보를 정할 때 적용한다.' },
 ];
 
-// 출전하면 전투 뒤 발동. [종류, 양]. 1위 족보와 불가사의에는 없다.
-const ABILITY = {
-  '불':['peek',1],
-  '청동검':['capture',1], '문자':['peek',1],
-  '전차':['capture',1], '화폐':['score',1], '철학':['peek',2],
-  '봉건제':['lock'], '길드':['score',1], '대학':['peek',2], '수도원':['score',2],
-  '동인도 회사':['score',1], '머스킷 부대':['capture',1], '성형 요새':['rest'], '자유 무역항':['score',1], '플랜테이션':['score',2],
-  '철갑선':['capture',2], '기관총':['break',2], '노동조합':['lock'], '백과사전':['peek',3], '신문':['score',1], '러다이트':['break',2],
-  '실리콘밸리':['score',1], '가짜 뉴스':['score',2], '냉전':['score',1], '감시 국가':['score',1], '핵겨울':['score',2],
-};
-const abilityText = name => {
-  const fx = ABILITY[name];
-  if (!fx) return '';
-  const [kind, n] = fx;
-  return { peek:`상대 숨은 회색돌 ${n}개 공개`, break:`상대 최강 문명의 마지막 돌 ${n}개 뒤집기`, capture:`이기면 진 문명의 마지막 돌 ${n}개 뒤집기`, score:`승점 +${n}`, lock:'상대 최강 문명 다음 턴 출전 금지', rest:'이 문명은 쉬지 않음' }[kind];
-};
-
-const flipColor = c => c === 'B' ? 'W' : 'B';
-const stoneOf = token => { const [kind, color] = TOKENS[token]; return { kind, color, revealed:kind !== 'G' }; };
-
+const STOCK = 7;
+// 세 문명에 하나씩 줄 때의 모든 경우.
+const OPTIONS = TOKEN_KEYS.flatMap(a => TOKEN_KEYS.flatMap(b => TOKEN_KEYS.map(c => [a, b, c])));
 // 모양 족보, 강한 순서: [이름, 설명, 예시]. 대체로 드문 모양이 위고, 외톨이만 하이리스크 규칙으로 꼴찌다.
 const SHAPES = [
   ['외길','전부 같은 색','BBBBB'],
@@ -181,27 +164,6 @@ function handRange(s, owner, i, view) {
   return { best:all[0], worst:all.at(-1) };
 }
 
-// 0: a 승, 1: b 승, null: 무승부. 돌이 없으면 지고, 시대가 다르면 앞선 쪽이 이긴다.
-function clash(a, b) {
-  if (!a || !b) return a ? 0 : b ? 1 : null;
-  if (a.age !== b.age) return a.age > b.age ? 0 : 1;
-  return versus(a, b);
-}
-
-// 돌 뽑기. 보통은 21개를 세 색에서 고르게, 가끔 한 색이 쏠린다.
-const JACKPOT = { chance:0.12, size:17 };
-function drawStones(rng) {
-  const n = [0, 0, 0];
-  if (rng() < JACKPOT.chance) {
-    const big = Math.floor(rng() * 2); // 흑이나 백. 회색 대박은 시뮬에서 이득이 없었다.
-    n[big] = JACKPOT.size;
-    for (let i = JACKPOT.size; i < 21; i++) n[(big + 1 + Math.floor(rng() * 2)) % 3]++;
-    return [n, 'BWG'[big]];
-  }
-  for (let i = 0; i < 21; i++) n[Math.floor(rng() * 3)]++;
-  return [n, null];
-}
-
 function labNewGame(mods, rng = Math.random) {
   const deck = SPECIALS.map(name => [rng(), name]).sort((a, b) => a[0] - b[0]).map(([, name]) => name);
   const player = p => {
@@ -215,10 +177,8 @@ function labNewGame(mods, rng = Math.random) {
   return { turn:1, stage:mods.augment ? 'prep' : 'assign', over:false, mods:{ ...mods }, pot:0, fx:newFx(), shown:[[], []], players:[player(0), player(1)], history:[] };
 }
 
-const cloneS = s => ({ ...s, shown:s.shown.map(a => [...a]), history:[...s.history],
-  fx:{ ...s.fx, blocked:[...s.fx.blocked], spoils:[...s.fx.spoils], used:[...s.fx.used], log:[...s.fx.log] },
-  players:s.players.map(p => ({ ...p, stock:{ ...p.stock }, civs:p.civs.map(c => ({ ...c, stones:c.stones.map(st => ({ ...st })) })) })) });
-
+const cloneS = s => ({ ...copyState(s), shown:s.shown.map(a => [...a]),
+  fx:{ ...s.fx, blocked:[...s.fx.blocked], spoils:[...s.fx.spoils], used:[...s.fx.used], log:[...s.fx.log] } });
 // 최종 결전: 세 문명을 전선 1·2·3에 놓는 여섯 가지 순서. 7턴이면 어느 규칙에서든 모든 문명이 돌 7개다.
 const PERMS = [[0,1,2],[0,2,1],[1,0,2],[1,2,0],[2,0,1],[2,1,0]];
 const isFinal = s => s.mods.final && !s.mods.fronts && s.turn === LAST_TURN;
@@ -241,41 +201,6 @@ function canMove(s, p, mv) {
   return s.mods.rush ? [0,1,2].every(c => pl.civs[c].stones.length + onCiv(c) <= LAST_TURN) : [0,1,2].every(c => onCiv(c) === 1);
 }
 
-// 최강 문명: 앞선 시대, 그다음 높은 순위.
-function strongest(s, p) {
-  let best = -1, key = -Infinity;
-  [0,1,2].forEach(i => { const h = handOf(s, p, i); if (h && h.age * 100 - h.rank > key) { key = h.age * 100 - h.rank; best = i; } });
-  return best;
-}
-
-function useAbility(s, p, c, hand, winner, beaten) {
-  const fx = s.mods.ability && hand && !hand.special && ABILITY[hand.name];
-  if (!fx) return null;
-  const [kind, n] = fx, q = 1 - p, foe = strongest(s, q), who = `문명 ${'ABC'[foe]}`;
-  if (kind === 'capture') {
-    const lost = winner === p && beaten !== null ? s.players[q].civs[beaten].stones.slice(-n) : [];
-    lost.forEach(st => { st.color = flipColor(st.color); });
-    return lost.length ? { p, name:hand.name, text:`진 문명의 마지막 돌 ${lost.length}개 점령` } : null;
-  }
-  let text = '효과 없음';
-  if (kind === 'score') { s.players[p].score += n; text = `승점 +${n}`; }
-  if (kind === 'rest') { s.players[p].civs[c].bannedThrough = s.turn; text = '이 문명은 쉬지 않음'; }
-  if (kind === 'peek') {
-    const hid = s.players[q].civs.flatMap(civ => civ.stones).filter(st => st.kind === 'G' && !st.revealed).slice(0, n);
-    hid.forEach(st => { st.revealed = true; });
-    if (hid.length) text = `상대 회색돌 ${hid.length}개 공개`;
-  }
-  if (foe >= 0 && kind === 'break') {
-    s.players[q].civs[foe].stones.slice(-n).forEach(st => { st.color = flipColor(st.color); });
-    text = `상대 ${who}의 마지막 돌 ${n}개 뒤집음`;
-  }
-  if (foe >= 0 && kind === 'lock') {
-    s.players[q].civs[foe].bannedThrough = Math.max(s.players[q].civs[foe].bannedThrough, s.turn + 1);
-    text = `상대 ${who} 다음 턴 출전 금지`;
-  }
-  return { p, name:hand.name, text };
-}
-
 // a, b: 맞붙는 문명 번호. 출전할 문명이 없으면 null.
 function resolve(s, a, b) {
   const t = s.turn, picks = [a, b], { mods } = s;
@@ -286,7 +211,7 @@ function resolve(s, a, b) {
   const winner = clash(turned(hands[0]), turned(hands[1])), gain = winner === null ? 0 : (pointsFor(t) + s.pot) * (s.fx.double ? 2 : 1) + (s.fx.spoils[winner] ? 1 : 0);
   if (winner !== null) { s.players[winner].score += gain; s.pot = 0; } else if (mods.carry) s.pot += pointsFor(t);
   if (!mods.fronts) picks.forEach((c, p) => { if (c !== null) s.players[p].civs[c].bannedThrough = t + (p === winner ? 2 : 1); });
-  const effects = picks.map((c, p) => c === null ? null : useAbility(s, p, c, hands[p], winner, picks[1 - p])).filter(Boolean);
+  const effects = picks.map((c, p) => c === null || !mods.ability ? null : useAbility(s, p, c, hands[p], winner, picks[1 - p], strongest(s, 1 - p, handOf))).filter(Boolean);
   hands.forEach((h, p) => { if (h?.special && !s.shown[p].includes(h.name)) s.shown[p].push(h.name); });
   return { fighters:picks, seqs, hands, winner, gain, effects, reversed:s.fx.reverse };
 }

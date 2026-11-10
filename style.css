@@ -248,3 +248,10 @@ ol.history li { padding: 6px 0; border-top: 1px solid var(--line); }
 @media (prefers-reduced-motion: reduce) {
   .stone.pending, .duel .card { animation: none; }
 }
+
+.fx { padding-left: 1.1em; margin: 8px 0 0; font-size: .92rem; }
+.draw-row { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+.draw-row .dot { width: 22px; height: 22px; animation: draw-pop .22s both ease-out; }
+.tag.jackpot { color: var(--gold); font-weight: 700; }
+@keyframes draw-pop { from { opacity: 0; transform: scale(.3); } }
+@media (prefers-reduced-motion: reduce) { .draw-row .dot { animation: none; } }
