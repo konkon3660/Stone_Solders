@@ -4,6 +4,8 @@ const sheet = document.getElementById('table-sheet');
 const LETTERS = 'ABC';
 const COLOR_NAME = { B:'흑', W:'백' };
 const TOKEN_NAME = { B:'흑돌', W:'백돌', GB:'회색돌(속은 흑)', GW:'회색돌(속은 백)' };
+// hitBase: 결과 화면 직전의 상태(뒤집힌 돌 비교용). hitShown: 효과를 낸 마지막 전투 수.
+let hitBase = null, hitShown = -1;
 let s, mode, phase = 'start', viewer = 0, assigns, fighters, ui, net = null, notice = '', noticeOk = false, tableTurn = 1, opened = false;
 
 const nameOf = p => mode === 'bot' ? ['나','봇'][p] : mode === 'online' ? (p === viewer ? '나' : '상대') : `플레이어 ${p + 1}`;
@@ -37,10 +39,10 @@ function shapeDots(shape, b, w) {
   return `<span class="dots" role="img" aria-label="${comboText(b, w)}, 순서 조건 있음">${stones}</span>${note ? `<small class="shape-note">${note}</small>` : ''}`;
 }
 
-function stoneHTML(st, owner, view) {
+function stoneHTML(st, owner, view, change = '') {
   if (isHidden(st, owner, view)) return '<span class="stone hidden" role="img" aria-label="공개되지 않은 회색돌">?</span>';
   const label = `${st.kind === 'G' ? '회색돌에서 나온 ' : ''}${COLOR_NAME[st.color]}돌`;
-  return `<span class="stone ${st.color === 'B' ? 'b' : 'w'}${st.kind === 'G' ? ' from-gray' : ''}" role="img" aria-label="${label}"></span>`;
+  return `<span class="stone ${st.color === 'B' ? 'b' : 'w'}${st.kind === 'G' ? ' from-gray' : ''}${change}" role="img" aria-label="${label}"></span>`;
 }
 
 function banTag(civ) {
@@ -84,7 +86,7 @@ function civCard(owner, i, view) {
   }
   return `<article class="card ${banned ? 'banned' : ''}">
     <div class="card-head"><strong>문명 ${LETTERS[i]}</strong>${s.over ? '' : banTag(civ)}</div>
-    <div class="stones">${civ.stones.map(st => stoneHTML(st, owner, view)).join('') || '<span class="empty">돌 없음</span>'}</div>
+    <div class="stones">${civ.stones.map((st, k) => stoneHTML(st, owner, view, phase === 'result' ? stoneChange(hitBase?.players[owner].civs[i].stones[k], st) : '')).join('') || '<span class="empty">돌 없음</span>'}</div>
     ${techPath(owner, i, view)}
     <div class="info">${info}</div>
   </article>`;
@@ -250,6 +252,7 @@ const screens = {
       <a class="primary" href="lab.html">실험실 게임</a>
     </div>
     <div class="tabs levels" role="group" aria-label="봇 난이도"><span>봇 난이도</span>${Object.entries(BOT_LEVELS).map(([id, l]) => `<button class="tab" data-act="level" data-level="${id}" aria-pressed="${BOT_TRIES.name === l.name}">${l.name}</button>`).join('')}</div>
+    <p class="bar">${soundButton()}</p>
     <div class="panel join">
       <label for="join-code">받은 방 코드</label>
       <input id="join-code" maxlength="4" autocomplete="off" value="${/^#[A-Za-z0-9]{4}$/.test(location.hash) ? location.hash.slice(1).toUpperCase() : ''}">
@@ -330,10 +333,12 @@ const screens = {
       `<div class="actionbar">${tableButton}<button class="primary" data-act="confirmFight" ${missing ? 'disabled' : ''}>${none ? '출전할 문명 없음, 넘어가기' : '출전 확정'}</button>${missing ? '<span class="hint">출전할 문명을 고르세요.</span>' : ''}</div>`)}`;
   },
   result: () => {
-    const h = s.history.at(-1), view = mode === 'hotseat' ? null : viewer;
+    const h = s.history.at(-1), view = mode === 'hotseat' ? null : viewer, fresh = hitShown !== s.history.length;
     const tone = h.winner === null || mode === 'hotseat' ? '' : h.winner === viewer ? 'win' : 'lose';
     const headline = h.winner === null ? '무승부' : `${nameOf(h.winner)} 승리 +${h.gain}점`;
-    const duel = p => { const e = h.hands[p], art = e && HAND_ART[e.name]; return `<article class="card duel-card ${h.winner === p ? 'winner' : ''}">
+    const hit = p => h.winner === null ? 'hit-draw' : h.winner !== p ? 'hit-lose' : h.hands[p]?.special ? 'hit-win hit-wonder' : 'hit-win';
+    const duel = p => { const e = h.hands[p], art = e && HAND_ART[e.name]; return `<article class="card duel-card ${p ? 'from-right' : 'from-left'} ${hit(p)} ${h.winner === p ? 'winner' : ''}">
+      ${h.winner === p && h.gain ? `<span class="gain-pop" aria-hidden="true">+${h.gain}</span>` : ''}
       ${e ? artImg(art, 'hand-art') : ''}
       <div class="card-head"><strong>${nameOf(p)}${h.fighters[p] === null ? '' : ` · 문명 ${LETTERS[h.fighters[p]]}`}</strong><span class="tag">${h.winner === p ? '승리' : h.winner === null ? '무승부' : '패배'}</span></div>
       <p class="hand-big">${e ? eraTag(e.age) + handLine(e) : '출전 없음'}</p>
@@ -343,15 +348,15 @@ const screens = {
       <cite class="credit">${artCredit(art)}</cite>` : ''}
     </article>`; };
     return `${hud(h.turn)}${steps(2)}
-      ${layout(`<p class="muted turn-label">${h.turn}/${LAST_TURN}턴</p>
+      ${layout(`<div class="hitbox ${fresh ? '' : 'calm'}"><p class="muted turn-label">${h.turn}/${LAST_TURN}턴</p>
         <h1 class="result-line ${tone}">${headline}</h1>
         <p class="reason">${reasonText(h)}</p>
-        <div class="duel">${duel(0)}${duel(1)}</div>
-        ${h.effects.length ? `<ul class="fx">${h.effects.map(e => `<li>${nameOf(e.p)} ${e.name}: ${e.text}</li>`).join('')}</ul>` : ''}
+        <div class="duel ${h.gain >= 2 ? 'big' : ''}">${duel(0)}${duel(1)}</div>
+        ${h.effects.length ? `<ul class="fx">${h.effects.map((e, i) => `<li style="animation-delay:${0.8 + i * 0.15}s">${nameOf(e.p)} ${e.name}: ${e.text}</li>`).join('')}</ul>` : ''}
         <h2 class="sub">${squadTitle(0)}</h2><div class="cards">${[0,1,2].map(i => civCard(0, i, view)).join('')}</div>
         <h2 class="sub">${nameOf(1)} 문명</h2><div class="cards">${[0,1,2].map(i => civCard(1, i, view)).join('')}</div>
-        ${historyHTML()}`,
-      `<div class="actionbar">${tableButton}<button class="primary" data-act="next">${s.over ? '최종 결과 보기' : '다음 턴'}</button></div>`)}`;
+        ${historyHTML()}</div>`,
+      `<div class="actionbar">${tableButton}${soundButton()}<button class="primary" data-act="next">${s.over ? '최종 결과 보기' : '다음 턴'}</button></div>`)}`;
   },
 
   end: () => {
@@ -395,6 +400,7 @@ function beginTurn() {
 const actions = {
   start({ mode: m }) { leaveRoom(); mode = m; s = newGame(); showDraw(); },
   level({ level }) { Object.assign(BOT_TRIES, BOT_LEVELS[level]); },
+  sound() { toggleSound(); wakeAudio(); },
   drawGo() { opened = true; },
   drawDone() { if (mode === 'online') enterStage(); else beginTurn(); },
   home() { leaveRoom(); phase = 'start'; },
@@ -451,6 +457,17 @@ const actions = {
   closeTable() { sheet.close(); },
 };
 
+const soundButton = () => `<button class="sound-toggle" data-act="sound" aria-pressed="${hitSound}">소리 ${hitSound ? '켬' : '끔'}</button>`;
+// 새 전투 결과를 처음 그렸을 때 한 번만 소리와 진동을 낸다. 사람 쪽에서 보면 이겼나 졌나.
+function hitOnce() {
+  if (phase === 'result' && hitShown !== s.history.length) {
+    const h = s.history.at(-1);
+    hitShown = s.history.length;
+    playHit({ outcome:h.winner === null ? 'draw' : mode === 'hotseat' || h.winner === viewer ? 'win' : 'lose', big:h.gain >= 2, flips:changedStones(hitBase, s), wonder:!!h.hands[h.winner]?.special });
+  }
+  if (phase !== 'result') hitBase = s;
+}
+
 function renderSheet() {
   sheet.innerHTML = `<div class="sheet-head"><strong>족보표</strong><button data-act="closeTable">닫기</button></div><div class="sheet-body">${tableHTML()}</div>`;
 }
@@ -463,6 +480,7 @@ function render() {
     : '<p class="notice">방과 연결이 끊겼습니다. <button data-act="rejoin">다시 연결</button></p>';
   app.innerHTML = (notice ? `<p class="notice ${noticeOk ? 'ok' : ''}">${notice}</p>` : '') + lost + screens[phase]();
   if (sheet.open) renderSheet(); else if (['assign', 'fight', 'waiting', 'result'].includes(phase)) renderSheet();
+  hitOnce();
   if (focused) {
     const again = [...document.querySelectorAll(`[data-act="${focused.act}"]`)].find(b => b.dataset.i === focused.i && b.dataset.kind === focused.kind && b.dataset.t === focused.t);
     again?.focus({ preventScroll:true });
@@ -474,6 +492,7 @@ document.addEventListener('click', e => {
   const button = e.target.closest('[data-act]');
   if (!button || button.disabled) return;
   const before = phase;
+  wakeAudio();
   notice = '';
   noticeOk = false;
   actions[button.dataset.act](button.dataset);
